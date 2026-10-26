@@ -2,7 +2,7 @@
 /*!
  * - ファイル: transaction.rs
  * - 概要: 検証済み診断から backup・順次適用・rollback・復元を実行します。
- * - バージョン: 01.01.00
+ * - バージョン: 01.01.01
  * - 作成日: 2026/10/26
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -24,6 +24,7 @@
  * Ver.01.00.01  Shunji Ogawa  2026/10/26  明示内部 QA で検証済 stage と DACL 保持後を観測。
  * Ver.01.00.02  Shunji Ogawa  2026/10/26  退避現物の競合を復元/rollback/次回照合でも拒否。
  * Ver.01.01.00  Shunji Ogawa  2026/10/26  選択Java内backupと保存時Javaの拘束、履歴の実保存先を追加。
+ * Ver.01.01.01  Shunji Ogawa  2026/10/26  初回journal未作成と末尾破断を区別し、復旧後の履歴を再読込。
  * ```
  *
  * 備考:
@@ -380,7 +381,7 @@ pub struct TransactionInspection {
 	pub stores: Vec<PathBuf>,
 	/// 選択し直す Java root。
 	pub java_root: PathBuf,
-	/// journal 末尾に破断がありました。
+	/// 最新の実在 journal に末尾破断があります。初回 journal の未作成は含めません。
 	pub torn_journal: bool,
 	/// 保存した release/java/keytool の現在 snapshot も一致するか。
 	pub java_unchanged: bool,
@@ -1504,6 +1505,8 @@ struct LoadedTransaction {
 	manifest: Manifest,
 	/// 最新 journal の安全に読めた部分。
 	journal: JournalStatus,
+	/// 初回 journal が未作成で、復旧 journal もまだ存在しない状態。
+	journal_missing: bool,
 	/// 追記する最新 journal の path。
 	journal_path: PathBuf,
 	/// 破断 journal の次に作る分岐番号。
@@ -1566,6 +1569,7 @@ pub fn list_history(options: &TransactionOptions) -> Result<Vec<HistoryEntry>, T
 /**
  * 選択した ID の schema/backup/journal と全実体を照合します。
  * 原/適用後/欠落/未知を区別し、末尾破断を Applied/Restored と判定しません。
+ * 初回 journal の未作成は Recoverable とし、実在 journal の末尾破断とは区別します。
  * この読み取り結果は復元許可の代わりではなく、復元関数が lock 後に再検査します。
  */
 //------------------------------------------------------------------------------
@@ -1682,6 +1686,7 @@ pub fn restore_transaction(
 /**
  * 未完了 transaction の既知状態だけを元へ戻します。未知 file は強制上書きしません。
  * 末尾破断 journal は変更せず、新規 recovery journal へ分岐して証跡を残します。
+ * 初回 journal の未作成も、元の不在を保つ新規 recovery journal へ記録します。
  * 欠落は永続化済み未検証の item と一致する元 recovery copy がある場合だけ許可します。
  */
 //------------------------------------------------------------------------------
@@ -1705,7 +1710,11 @@ pub fn recover_transaction(
 }
 
 //------------------------------------------------------------------------------
-/** 限定 root 内の一件を再読込みし、各 backup と現在の path を完全に検証します。 */
+/**
+ * 限定 root 内の一件を再読込みし、各 backup と現在の path を完全に検証します。
+ * 初回 journal だけは未作成を Prepared として保持し、復旧分岐の存在後も同じ規則を使います。
+ * 存在する全 journal の内容と復旧分岐の連番を検証し、欠落以外の I/O 失敗は返します。
+ */
 //------------------------------------------------------------------------------
 fn load_transaction(
 	options: &TransactionOptions,
@@ -1736,6 +1745,29 @@ fn load_transaction(
 	}
 	manifest.validate(id, &root)?;
 	let mut journal_path = directory.join("journal.jsonl");
+	// manifest 保存後・初回 journal 作成前の中断だけを、未変更の Prepared として扱う
+	let (mut journal, initial_journal_missing) = match fs::symlink_metadata(&journal_path) {
+		Ok(_) => (read_journal(&journal_path, manifest.items.len())?, false),
+		Err(error) if error.kind() == std::io::ErrorKind::NotFound => (
+			JournalStatus {
+				state: TransactionState::Prepared,
+				next: 1,
+				torn_tail: false,
+				valid_bytes: 0,
+				started: vec![false; manifest.items.len()],
+				pending: None,
+				operation_id: None,
+			},
+			true,
+		),
+		Err(error) => {
+			return Err(TransactionError::io(
+				TransactionPhase::History,
+				&journal_path,
+				error,
+			));
+		}
+	};
 	let mut next_branch = 1;
 	let mut allowed = BTreeSet::from([
 		"manifest.json".to_owned(),
@@ -1744,20 +1776,30 @@ fn load_transaction(
 	]);
 	allowed.extend(manifest.items.iter().map(|item| item.backup_name.clone()));
 	// recovery journal は連番だけを受理し、元の破断記録も保存する
-	while directory
-		.join(format!("recovery-{next_branch:04}.jsonl"))
-		.exists()
-	{
+	loop {
+		let name = format!("recovery-{next_branch:04}.jsonl");
+		let path = directory.join(&name);
+		// 復旧 journal の読込不能を不存在に変えず、連番の欠落は後続の許可名検査でも拒否する
+		match fs::symlink_metadata(&path) {
+			Ok(_) => {}
+			Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+			Err(error) => {
+				return Err(TransactionError::io(
+					TransactionPhase::History,
+					&path,
+					error,
+				));
+			}
+		}
 		if next_branch > 128 {
 			return Err(TransactionError::new(
 				TransactionCode::InvalidJournal,
 				TransactionPhase::History,
 			));
 		}
-		let name = format!("recovery-{next_branch:04}.jsonl");
-		allowed.insert(name.clone());
-		read_journal(&journal_path, manifest.items.len())?;
-		journal_path = directory.join(name);
+		allowed.insert(name);
+		journal = read_journal(&path, manifest.items.len())?;
+		journal_path = path;
 		next_branch += 1;
 	}
 	for entry in fs::read_dir(&directory)
@@ -1777,20 +1819,6 @@ fn load_transaction(
 			));
 		}
 	}
-	// manifest 保存直後の強制終了も、対象未変更の Prepared として分類できる
-	let journal = if journal_path.exists() {
-		read_journal(&journal_path, manifest.items.len())?
-	} else {
-		JournalStatus {
-			state: TransactionState::Prepared,
-			next: 1,
-			torn_tail: true,
-			valid_bytes: 0,
-			started: vec![false; manifest.items.len()],
-			pending: None,
-			operation_id: None,
-		}
-	};
 	for item in &manifest.items {
 		verify_raw_backup(&directory.join(&item.backup_name), &item.original)?;
 	}
@@ -1810,6 +1838,7 @@ fn load_transaction(
 		directory,
 		manifest,
 		journal,
+		journal_missing: initial_journal_missing && next_branch == 1,
 		journal_path,
 		next_branch,
 		states,
@@ -2008,7 +2037,7 @@ fn restore_or_recover(
 	}
 	check_cancel(cancellation)?;
 	verify_saved_java(environment, &loaded.manifest)?;
-	let mut journal = if loaded.journal.torn_tail {
+	let mut journal = if loaded.journal_missing || loaded.journal.torn_tail {
 		let path = loaded
 			.directory
 			.join(format!("recovery-{:04}.jsonl", loaded.next_branch));

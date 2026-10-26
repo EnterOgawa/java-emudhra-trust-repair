@@ -2,7 +2,7 @@
 /*!
  * - ファイル: internal_qa.rs
  * - 概要: 所有する隔離子の実 kill と次回の現物分類・復旧・実 OS 拒否を検証します。
- * - バージョン: 01.00.00
+ * - バージョン: 01.00.01
  * - 作成日: 2026/10/26
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -15,6 +15,7 @@
  * 更新履歴:
  * ```text
  * Ver.01.00.00  Shunji Ogawa  2026/10/26  永続化/置換/DACL 境界の実子終了と安全な次回復旧を追加。
+ * Ver.01.00.01  Shunji Ogawa  2026/10/26  初回journal未作成の復旧後履歴・再適用/復元と読込拒否を検証。
  * ```
  *
  * 備考: internal-qa feature と明示した artifacts/internal-qa だけを使用します。通常は ignore。
@@ -442,84 +443,295 @@ fn kills_at_persistent_boundaries_and_recovers_from_actual_files() {
 		("recovery-required", "journal-RecoveryRequired", 1),
 	];
 	for (index, (mode, boundary, occurrence)) in boundaries.iter().enumerate() {
-		let test = case(&format!("kill-{index:02}"));
-		if mode.starts_with("restore") {
-			test.apply(&test.options).expect("preapply");
-		}
-		let mut child = paused_child(&test, mode, boundary, *occurrence);
-		let pid = child.0.id();
-		child.0.kill().expect("kill only owned child");
-		assert!(!child.0.wait().expect("reap child").success());
-		let entries = list_history(&test.options).expect("next-run history");
-		assert_eq!(entries.len(), 1);
-		let id = &entries[0].transaction_id;
-		let inspected = inspect_transaction(&test.options, id).expect("next-run inspect");
-		let before = test.hashes();
-		if inspected.state == HistoryState::IncompletePreparation {
-			test.assert_original();
-			assert!(
-				recover_transaction(
-					&test.java,
-					&test.options,
-					id,
-					&[&test.secret, &test.secret],
-					&Cancellation::default(),
-					|_| {}
-				)
-				.is_err()
-			);
-		} else if inspected.state == HistoryState::RecoveryRequired {
-			let error = recover_transaction(
-				&test.java,
-				&test.options,
-				id,
-				&[&test.secret, &test.secret],
-				&Cancellation::default(),
-				|_| {},
-			)
-			.expect_err("ambiguous metadata cannot be overwritten");
-			assert_eq!(error.code, TransactionCode::RecoveryRequired);
-			assert_eq!(test.hashes(), before);
-			assert!(
-				test.options
-					.backup_root()
-					.join(id)
-					.join("manifest.json")
-					.is_file()
-			);
-		} else {
-			assert!(
-				!matches!(
-					inspected.state,
-					HistoryState::Applied | HistoryState::Restored | HistoryState::RolledBack
-				) || (*mode == "restore" && *boundary == "stage-created")
-					|| matches!(
-						*boundary,
-						"journal-Applied"
-							| "journal-Restored" | "journal-RolledBack"
-							| "journal-RestoreRolledBack"
-					)
-			);
-			let result = recover_transaction(
-				&test.java,
-				&test.options,
-				id,
-				&[&test.secret, &test.secret],
-				&Cancellation::default(),
-				|_| {},
-			)
-			.expect("known state recovery");
-			assert!(matches!(
-				result.state,
-				TransactionState::Restored | TransactionState::AlreadyRestored
-			));
-			test.assert_original();
-		}
-		println!(
-			"kill {index:02} {mode} {boundary} occurrence={occurrence}: pid={pid} reaped; {:?}; next-run recovery contract verified",
-			inspected.state
+		verify_killed_boundary(index, mode, boundary, *occurrence);
+	}
+}
+
+//------------------------------------------------------------------------------
+/** 一つの永続化境界で所有子を実終了し、次回読込と復旧後の保全を確認します。 */
+//------------------------------------------------------------------------------
+fn verify_killed_boundary(index: usize, mode: &str, boundary: &str, occurrence: usize) {
+	let test = case(&format!("kill-{index:02}"));
+	if mode.starts_with("restore") {
+		test.apply(&test.options).expect("preapply");
+	}
+	let mut child = paused_child(&test, mode, boundary, occurrence);
+	let pid = child.0.id();
+	child.0.kill().expect("kill only owned child");
+	assert!(!child.0.wait().expect("reap child").success());
+	let entries = list_history(&test.options).expect("next-run history");
+	assert_eq!(entries.len(), 1);
+	let id = &entries[0].transaction_id;
+	let inspected = inspect_transaction(&test.options, id).expect("next-run inspect");
+	if mode == "apply" && boundary == "manifest-verified" {
+		assert_eq!(inspected.state, HistoryState::Recoverable);
+		assert!(
+			!inspected.torn_journal,
+			"absent initial journal is not a torn file"
+		);
+		assert!(
+			test.options
+				.backup_root()
+				.join(id)
+				.join("manifest.json")
+				.is_file()
+		);
+		assert_eq!(
+			fs::symlink_metadata(test.options.backup_root().join(id).join("journal.jsonl"))
+				.expect_err("initial journal has never been created")
+				.kind(),
+			std::io::ErrorKind::NotFound
 		);
 	}
+	let before = test.hashes();
+	if inspected.state == HistoryState::IncompletePreparation {
+		test.assert_original();
+		assert!(
+			recover_transaction(
+				&test.java,
+				&test.options,
+				id,
+				&[&test.secret, &test.secret],
+				&Cancellation::default(),
+				|_| {}
+			)
+			.is_err()
+		);
+	} else if inspected.state == HistoryState::RecoveryRequired {
+		let error = recover_transaction(
+			&test.java,
+			&test.options,
+			id,
+			&[&test.secret, &test.secret],
+			&Cancellation::default(),
+			|_| {},
+		)
+		.expect_err("ambiguous metadata cannot be overwritten");
+		assert_eq!(error.code, TransactionCode::RecoveryRequired);
+		assert_eq!(test.hashes(), before);
+		assert!(
+			test.options
+				.backup_root()
+				.join(id)
+				.join("manifest.json")
+				.is_file()
+		);
+	} else {
+		assert!(
+			!matches!(
+				inspected.state,
+				HistoryState::Applied | HistoryState::Restored | HistoryState::RolledBack
+			) || (mode == "restore" && boundary == "stage-created")
+				|| matches!(
+					boundary,
+					"journal-Applied"
+						| "journal-Restored"
+						| "journal-RolledBack"
+						| "journal-RestoreRolledBack"
+				)
+		);
+		let result = recover_transaction(
+			&test.java,
+			&test.options,
+			id,
+			&[&test.secret, &test.secret],
+			&Cancellation::default(),
+			|_| {},
+		)
+		.expect("known state recovery");
+		assert!(matches!(
+			result.state,
+			TransactionState::Restored | TransactionState::AlreadyRestored
+		));
+		test.assert_original();
+		if mode == "apply" && boundary == "manifest-verified" {
+			assert_recovered_initial_journal_history(&test, id);
+		}
+	}
+	println!(
+		"kill {index:02} {mode} {boundary} occurrence={occurrence}: pid={pid} reaped; {:?}; next-run recovery contract verified",
+		inspected.state
+	);
+}
+
+//------------------------------------------------------------------------------
+/** 復旧完了の履歴を再読込し、次の適用・全件検証・復元が元 byte/metadata へ戻ることを確認。 */
+//------------------------------------------------------------------------------
+fn assert_recovered_initial_journal_history(test: &Case, id: &str) {
+	let directory = test.options.backup_root().join(id);
+	assert!(!directory.join("journal.jsonl").exists());
+	assert!(directory.join("recovery-0001.jsonl").is_file());
+	let history = list_history(&test.options).expect("history after initial-journal recovery");
+	assert_eq!(history.len(), 1);
+	let inspection = history[0]
+		.inspection
+		.as_ref()
+		.expect("recovered entry readable");
+	assert_eq!(inspection.state, HistoryState::Restored);
+	assert!(!inspection.torn_journal);
+	let applied = test
+		.apply(&test.options)
+		.expect("next apply accepts recovered history");
+	assert_eq!(applied.state, TransactionState::Applied);
+	assert_eq!(list_history(&test.options).expect("both records").len(), 2);
+	restore_transaction(
+		&test.java,
+		&test.options,
+		&applied.transaction_id,
+		&[&test.secret, &test.secret],
+		&Cancellation::default(),
+		|_| {},
+	)
+	.expect("restore after next apply");
+	test.assert_original();
+	assert!(!directory.join("journal.jsonl").exists());
+	for entry in list_history(&test.options).expect("history after next restore") {
+		assert_eq!(
+			entry.inspection.expect("both records readable").state,
+			HistoryState::Restored
+		);
+	}
+	println!(
+		"initial journal absent: recovery history readable; next apply/restore preserved original bytes, complete inventory and metadata"
+	);
+}
+
+//------------------------------------------------------------------------------
+/** 34境界と同じ実 kill を初回 journal 作成前だけに実行し、復旧後の再利用まで確認します。 */
+//------------------------------------------------------------------------------
+#[test]
+#[ignore = "明示 internal-qa 領域と実 Java が必要"]
+fn missing_initial_journal_recovers_and_allows_next_apply() {
+	prepare_shared_java();
+	verify_killed_boundary(4, "apply", "manifest-verified", 1);
+}
+
+//------------------------------------------------------------------------------
+/** 初回 journal の権限/共有失敗・不正内容と復旧連番の欠落を、未作成として許可しません。 */
+//------------------------------------------------------------------------------
+#[test]
+#[ignore = "明示 internal-qa 領域・実 Java と現利用者 SID が必要"]
+fn journal_read_errors_and_missing_recovery_branch_are_rejected() {
+	prepare_shared_java();
+	let test = case("journal-errors");
+	let applied = test
+		.apply(&test.options)
+		.expect("apply before negative cases");
+	let initial = applied.backup_directory.join("journal.jsonl");
+	let initial_bytes = fs::read(&initial).expect("initial evidence");
+	let before = test.hashes();
+	let exclusive = OpenOptions::new()
+		.read(true)
+		.share_mode(0)
+		.open(&initial)
+		.expect("exclusive owned journal");
+	let sharing = inspect_transaction(&test.options, &applied.transaction_id)
+		.expect_err("sharing failure is not an absent journal");
+	drop(exclusive);
+	assert!(
+		sharing.os_code == Some(32)
+			|| matches!(
+				sharing.file_error,
+				Some(trust_repair_windows::FileSafetyError::Io {
+					os_code: Some(32),
+					..
+				})
+			),
+		"{sharing:?}"
+	);
+	let sid = std::env::var("JTR_QA_SID").expect("explicit test principal SID");
+	assert!(
+		sid.starts_with("S-1-")
+			&& sid
+				.bytes()
+				.all(|byte| byte.is_ascii_digit() || byte == b'S' || byte == b'-')
+	);
+	let allowed = format!("(A;;FA;;;{sid})(A;;FA;;;BA)");
+	set_fixture_dacl(&initial, &format!("(D;;0x1;;;{sid}){allowed}"));
+	let denied = inspect_transaction(&test.options, &applied.transaction_id)
+		.expect_err("permission failure is not an absent journal");
+	set_fixture_dacl(&initial, &allowed);
+	assert_eq!(denied.code, TransactionCode::PermissionDenied);
+	assert_eq!(
+		fs::read(&initial).expect("initial evidence unchanged"),
+		initial_bytes
+	);
+	assert_eq!(test.hashes(), before);
+	let mut torn = initial_bytes.clone();
+	torn.truncate(torn.len() - 7);
+	fs::write(&initial, &torn).expect("simulate initial torn tail");
+	assert!(
+		inspect_transaction(&test.options, &applied.transaction_id)
+			.expect("existing torn initial journal")
+			.torn_journal
+	);
+	recover_transaction(
+		&test.java,
+		&test.options,
+		&applied.transaction_id,
+		&[&test.secret, &test.secret],
+		&Cancellation::default(),
+		|_| {},
+	)
+	.expect("first torn-tail recovery");
+	let branch = applied.backup_directory.join("recovery-0001.jsonl");
+	let mut branch_bytes = fs::read(&branch).expect("first recovery evidence");
+	branch_bytes.truncate(branch_bytes.len() - 7);
+	fs::write(&branch, &branch_bytes).expect("simulate recovery torn tail");
+	assert!(
+		inspect_transaction(&test.options, &applied.transaction_id)
+			.expect("existing torn recovery journal")
+			.torn_journal
+	);
+	recover_transaction(
+		&test.java,
+		&test.options,
+		&applied.transaction_id,
+		&[&test.secret, &test.secret],
+		&Cancellation::default(),
+		|_| {},
+	)
+	.expect("second torn-tail recovery");
+	let second = applied.backup_directory.join("recovery-0002.jsonl");
+	let second_bytes = fs::read(&second).expect("second recovery evidence");
+	let saved = test.path.join("retained-recovery-0001.jsonl");
+	fs::rename(&branch, &saved)
+		.expect("preserve missing intermediate evidence outside transaction");
+	let gap = inspect_transaction(&test.options, &applied.transaction_id)
+		.expect_err("missing intermediate recovery is rejected");
+	fs::rename(&saved, &branch).expect("restore intermediate evidence");
+	assert_eq!(gap.code, TransactionCode::InvalidManifest);
+	fs::write(
+		&initial,
+		b"{\"sequence\":2,\"event\":\"Prepared\",\"item\":null,\"operation_id\":null}\n",
+	)
+	.expect("simulate invalid existing initial journal");
+	let invalid = inspect_transaction(&test.options, &applied.transaction_id)
+		.expect_err("existing invalid initial journal is not ignored after recovery");
+	fs::write(&initial, &torn).expect("restore original torn evidence");
+	assert_eq!(invalid.code, TransactionCode::InvalidJournal);
+	assert_eq!(
+		fs::read(&initial).expect("original torn evidence retained"),
+		torn
+	);
+	assert_eq!(
+		fs::read(&branch).expect("first torn recovery retained"),
+		branch_bytes
+	);
+	assert_eq!(
+		fs::read(&second).expect("latest recovery unchanged"),
+		second_bytes
+	);
+	assert_eq!(
+		inspect_transaction(&test.options, &applied.transaction_id)
+			.expect("history restored after negative cases")
+			.state,
+		HistoryState::Restored
+	);
+	test.assert_original();
+	println!(
+		"initial journal sharing/permission/invalid content and missing intermediate recovery rejected; torn original/recovery evidence and original target bytes/inventory/metadata preserved"
+	);
 }
 
 //------------------------------------------------------------------------------
