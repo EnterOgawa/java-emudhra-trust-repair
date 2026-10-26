@@ -1,0 +1,9 @@
+# Copyright (c) 2026 EnterSystem CO.,LTD.
+# SPDX-License-Identifier: Apache-2.0
+
+edition = "2024"
+style_edition = "2024"
+hard_tabs = true
+tab_spaces = 4
+max_width = 100
+newline_style = "Unix"

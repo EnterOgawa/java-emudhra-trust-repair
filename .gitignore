@@ -1,0 +1,12 @@
+/target/
+/output/
+/artifacts/
+/logs/
+/backups/
+/signing-local/
+*.exe
+*.dll
+*.pdb
+*.pfx
+*.p12
+*.key

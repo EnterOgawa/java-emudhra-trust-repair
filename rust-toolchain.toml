@@ -1,0 +1,8 @@
+# Copyright (c) 2026 EnterSystem CO.,LTD.
+# SPDX-License-Identifier: Apache-2.0
+
+[toolchain]
+channel = "1.99.1"
+profile = "minimal"
+components = ["rustfmt", "clippy"]
+targets = ["x86_64-pc-windows-msvc"]

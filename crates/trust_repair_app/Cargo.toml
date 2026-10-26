@@ -1,0 +1,36 @@
+# Copyright (c) 2026 EnterSystem CO.,LTD.
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "trust_repair_app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Java eMudhra 信頼ストア対策の Windows ネイティブアプリ"
+
+[dependencies]
+trust_repair_core.workspace = true
+trust_repair_windows.workspace = true
+eframe.workspace = true
+rfd.workspace = true
+zeroize.workspace = true
+# eguiと同じ既存parserでTTC内のMS Gothicのface名を照合する
+skrifa = "=0.44.0"
+image = { version = "=0.25.10", default-features = false, features = ["png"], optional = true }
+
+[build-dependencies]
+# Windows SDK の resource compiler 検出と、exe 専用の ICO リンクを行う
+embed-resource = "=3.0.12"
+
+[features]
+gui-qa = ["dep:image", "trust_repair_windows/internal-qa"]
+
+[[bin]]
+name = "java-trust-repair"
+path = "src/main.rs"
+
+[lints]
+workspace = true

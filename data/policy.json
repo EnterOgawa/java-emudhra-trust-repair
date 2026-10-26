@@ -1,0 +1,35 @@
+{
+  "Id": "oracle-emudhra-2026-10-24",
+  "ReviewedOn": "2026-10-26",
+  "Advisory": "https://ops.java/emudhra",
+  "Roots": [
+    {
+      "Id": "emsignrootcag1",
+      "Name": "emSign Root CA - G1",
+      "Sha256": "40F6AF0346A99AA1CD1D555A4E9CCE62C7F9634603EE406615833DC8C8D00367",
+      "Source": "https://raw.githubusercontent.com/openjdk/jdk/jdk-25-ga/src/java.base/share/data/cacerts/emsignrootcag1",
+      "Relation": "additional-distrust"
+    },
+    {
+      "Id": "emsignrootcag2",
+      "Name": "emSign Root CA - G2",
+      "Sha256": "1AA0C2709E831BD6E3B5129A00BA41F7EEEF020872F1E6504BF0F6C3F24F3AF3",
+      "Source": "https://raw.githubusercontent.com/openjdk/jdk/jdk-25-ga/src/java.base/share/data/cacerts/emsignrootcag2",
+      "Relation": "additional-distrust"
+    },
+    {
+      "Id": "emsigneccrootcag3",
+      "Name": "emSign ECC Root CA - G3",
+      "Sha256": "86A1ECBA089C4A8D3BBE2734C612BA341D813E043CF9E8A862CD5C57A36BBE6B",
+      "Source": "https://raw.githubusercontent.com/openjdk/jdk/jdk-25-ga/src/java.base/share/data/cacerts/emsigneccrootcag3",
+      "Relation": "affected-chain"
+    },
+    {
+      "Id": "comodoaaaca",
+      "Name": "AAA Certificate Services",
+      "Sha256": "D7A7A0FB5D7E2731D771E9484EBCDEF71D5F0C3E0A2948782BC83EE0EA699EF4",
+      "Source": "https://raw.githubusercontent.com/openjdk/jdk/jdk-25-ga/src/java.base/share/data/cacerts/comodoaaaca",
+      "Relation": "affected-chain"
+    }
+  ]
+}

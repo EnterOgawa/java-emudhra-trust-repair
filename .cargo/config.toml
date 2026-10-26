@@ -1,0 +1,10 @@
+# Copyright (c) 2026 EnterSystem CO.,LTD.
+# SPDX-License-Identifier: Apache-2.0
+
+# 製品 target を明示し、host の build script/proc-macro に CRT 設定を渡さない
+[build]
+target = "x86_64-pc-windows-msvc"
+
+# 配布先への VC++ ランタイム追加導入を要求しない単体 exe を作る
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

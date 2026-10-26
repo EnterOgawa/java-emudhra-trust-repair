@@ -1,0 +1,29 @@
+# Copyright (c) 2026 EnterSystem CO.,LTD.
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "trust_repair_windows"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Java 信頼ストア対策の Windows OS 境界"
+
+[features]
+# 明示した隔離試験だけで永続化直後の停止を許可する。通常 build には含めない
+internal-qa = []
+
+[dependencies]
+trust_repair_core.workspace = true
+sha2.workspace = true
+zeroize.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
+[lints]
+workspace = true

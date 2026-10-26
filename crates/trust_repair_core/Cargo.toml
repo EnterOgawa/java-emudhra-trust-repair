@@ -1,0 +1,22 @@
+# Copyright (c) 2026 EnterSystem CO.,LTD.
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "trust_repair_core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Java 信頼ストア対策の副作用を持たない定義と検証規則"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+base64.workspace = true
+x509-parser.workspace = true
+
+[lints]
+workspace = true

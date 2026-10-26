@@ -1,0 +1,4 @@
+// Copyright (c) 2026 EnterSystem CO.,LTD.
+// SPDX-License-Identifier: Apache-2.0
+// Explorer and the native window use the same original shield/check artwork.
+1 ICON "assets/app.ico"
