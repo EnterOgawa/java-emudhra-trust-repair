@@ -2,7 +2,7 @@
 /*!
  * - ファイル: tests.rs
  * - 概要: GUI の言語境界、秘密の非保存、未完了優先とキーボード入力を検証します。
- * - バージョン: 01.03.00
+ * - バージョン: 01.03.01
  * - 作成日: 2026/10/26
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -18,6 +18,7 @@
  * Ver.01.01.00  Shunji Ogawa  2026/10/26  簡素化した確認破棄・未完了案内・秘密非保存へ更新。
  * Ver.01.02.00  Shunji Ogawa  2026/10/26  自動判定の保守的分類・世代拒否・非消費入力を検証。
  * Ver.01.03.00  Shunji Ogawa  2026/10/26  選択Javaの履歴だけを採用し、入力変更で保存先と履歴を分離。
+ * Ver.01.03.01  Shunji Ogawa  2026/10/26  初回Empty直後のDone・終了を同期し、pollの結果採用と回収を検証。
  * ```
  *
  * 備考: ファイル・Java を変更しない試験です。native の実測は別の明示 QA で行います。
@@ -25,6 +26,8 @@
 //------------------------------------------------------------------------------
 
 use super::*;
+use std::sync::mpsc;
+use std::thread;
 use trust_repair_windows::{ItemState, TransactionInspection};
 
 //------------------------------------------------------------------------------
@@ -37,6 +40,251 @@ fn app(language: Language) -> TrustRepairApp {
 		TransactionOptions::with_backup_root(PathBuf::from("D:/isolated-ui-tests/backups"))
 			.expect("fixed absolute test path"),
 	)
+}
+
+//------------------------------------------------------------------------------
+/** ファイルを変更せず、pollが保持すべき検証済み結果と再起動要否を作ります。 */
+//------------------------------------------------------------------------------
+fn poll_outcome(state: TransactionState, restart_required: bool) -> TransactionOutcome {
+	TransactionOutcome {
+		transaction_id: "poll-result".to_owned(),
+		state,
+		backup_directory: PathBuf::from("D:/isolated-ui-tests/backups/poll-result"),
+		stores: vec![PathBuf::from("D:/isolated-ui-tests/cacerts")],
+		restart_required,
+	}
+}
+
+//------------------------------------------------------------------------------
+/** 制御済みworkerが終了判定へ到達するまで待ちます。sleepを使わず、試験障害は5秒で失敗します。 */
+//------------------------------------------------------------------------------
+fn await_worker_finished(worker: &Worker) {
+	let deadline = Instant::now() + Duration::from_secs(5);
+	while !worker.handle.is_finished() {
+		assert!(Instant::now() < deadline, "controlled worker must finish");
+		thread::yield_now();
+	}
+}
+
+//------------------------------------------------------------------------------
+/**
+ * pollの初回受信を必ずEmptyにし、その直後だけ通知送信・thread終了を許可します。
+ * 実際のpollを呼ぶ試験専用で、panic指定時も所有threadはpollで回収します。
+ */
+//------------------------------------------------------------------------------
+fn finish_after_initial_drain(app: &mut TrustRepairApp, events: Vec<Event>, panics: bool) {
+	let (release, wait) = mpsc::channel();
+	let (sender, receiver) = mpsc::channel();
+	let handle = thread::spawn(move || {
+		wait.recv().expect("poll releases controlled worker");
+		for event in events {
+			assert!(sender.send(event).is_ok(), "poll owns the receiver");
+		}
+		assert!(!panics, "controlled worker panic");
+	});
+	app.worker = Some(Worker {
+		cancellation: trust_repair_windows::Cancellation::default(),
+		receiver,
+		handle,
+	});
+	app.after_worker_drain = Some(Box::new(move |worker| {
+		assert!(matches!(
+			worker.receiver.try_recv(),
+			Err(TryRecvError::Empty)
+		));
+		assert!(!worker.handle.is_finished());
+		release.send(()).expect("controlled worker waits for poll");
+		await_worker_finished(worker);
+	}));
+}
+
+//------------------------------------------------------------------------------
+/** 初回Empty→Done送信→thread終了の順でも、検証済み状態・再起動要否を一度だけ採用します。 */
+//------------------------------------------------------------------------------
+#[test]
+fn poll_accepts_done_sent_between_initial_empty_and_finished_check() {
+	for (state, status, restart) in [
+		(TransactionState::Applied, CurrentStatus::Disabled, true),
+		(
+			TransactionState::Restored,
+			CurrentStatus::TargetsRemain,
+			true,
+		),
+		(
+			TransactionState::AlreadyRestored,
+			CurrentStatus::TargetsRemain,
+			false,
+		),
+	] {
+		let mut app = app(Language::English);
+		finish_after_initial_drain(
+			&mut app,
+			vec![Event::Done(Ok(Completed::Transaction(poll_outcome(
+				state, restart,
+			))))],
+			false,
+		);
+		app.poll();
+		assert!(app.worker.is_none() && app.pending.is_none());
+		assert!(!app.error && app.error_details.is_empty() && app.progress.is_empty());
+		assert!(app.current_status == status);
+		let outcome = app.outcome.as_ref().expect("late success must be retained");
+		assert_eq!(outcome.state, state);
+		assert_eq!(outcome.transaction_id, "poll-result");
+		assert_eq!(outcome.restart_required, restart);
+		assert_eq!(
+			outcome.stores,
+			[PathBuf::from("D:/isolated-ui-tests/cacerts")]
+		);
+		app.message = "already accepted".to_owned();
+		app.poll();
+		assert_eq!(app.message, "already accepted");
+		assert!(app.pending.is_none() && app.outcome.is_some());
+	}
+}
+
+//------------------------------------------------------------------------------
+/** Done欠落・実panic・成功通知後の実panicは、古い結果を残さず予期しない終了へ分類します。 */
+//------------------------------------------------------------------------------
+#[test]
+fn poll_rejects_finished_worker_without_done_or_with_panic() {
+	for (sends_done, panics) in [(false, false), (false, true), (true, true)] {
+		let mut app = app(Language::English);
+		app.outcome = Some(poll_outcome(TransactionState::Applied, true));
+		app.confirmation = Some(Confirmation::Deactivate);
+		let events = if sends_done {
+			vec![Event::Done(Ok(Completed::Transaction(poll_outcome(
+				TransactionState::Restored,
+				true,
+			))))]
+		} else {
+			Vec::new()
+		};
+		finish_after_initial_drain(&mut app, events, panics);
+		app.poll();
+		assert!(app.worker.is_none() && app.pending.is_none());
+		assert!(app.error && app.outcome.is_none() && app.confirmation.is_none());
+		assert!(app.current_status == CurrentStatus::Unavailable);
+		assert!(app.error_details.contains("Success cannot be confirmed"));
+	}
+}
+
+//------------------------------------------------------------------------------
+/** 遅着した失敗の分類を維持し、同じ競合窓でも古い自動確認世代だけは採用しません。 */
+//------------------------------------------------------------------------------
+#[test]
+fn poll_preserves_late_failure_and_rejects_stale_automatic_generation() {
+	let mut app = app(Language::English);
+	app.outcome = Some(poll_outcome(TransactionState::Applied, true));
+	finish_after_initial_drain(
+		&mut app,
+		vec![Event::Done(Err(Failure::Process(
+			trust_repair_windows::ProcessError::Cancelled,
+		)))],
+		false,
+	);
+	app.poll();
+	assert!(app.worker.is_none() && app.pending.is_none() && app.outcome.is_none());
+	assert!(!app.error && app.current_status == CurrentStatus::Unavailable);
+	assert_eq!(app.message, "Cancelled. Nothing was changed.");
+	assert!(!app.error_details.contains("Success cannot be confirmed"));
+
+	for stale in [false, true] {
+		let mut app = self::app(Language::English);
+		app.input_generation = 2;
+		app.automatic_generation = Some(if stale { 1 } else { 2 });
+		app.current_status = CurrentStatus::TargetsRemain;
+		app.message = "current selection".to_owned();
+		finish_after_initial_drain(
+			&mut app,
+			vec![Event::Done(Err(Failure::Save(
+				std::io::ErrorKind::PermissionDenied,
+			)))],
+			false,
+		);
+		app.poll();
+		assert!(
+			app.worker.is_none() && app.pending.is_none() && app.automatic_generation.is_none()
+		);
+		if stale {
+			assert!(!app.error && app.current_status == CurrentStatus::TargetsRemain);
+			assert_eq!(app.message, "current selection");
+			assert!(app.error_details.is_empty());
+		} else {
+			assert!(app.error && app.current_status == CurrentStatus::Unavailable);
+			assert_eq!(app.message, Language::English.administrator_required());
+		}
+	}
+}
+
+//------------------------------------------------------------------------------
+/** Done受信後も生存workerを保持し、最新工程・中断要求・close待機を終了回収まで維持します。 */
+//------------------------------------------------------------------------------
+#[test]
+fn poll_keeps_live_worker_and_waits_to_close_until_reaped() {
+	let mut app = app(Language::English);
+	let (finish, wait) = mpsc::channel();
+	let (sender, receiver) = mpsc::channel();
+	let (ready, started) = mpsc::channel();
+	let handle = thread::spawn(move || {
+		for phase in [
+			trust_repair_windows::TransactionPhase::Prepare,
+			trust_repair_windows::TransactionPhase::Verify,
+		] {
+			assert!(
+				sender
+					.send(Event::Transaction(
+						trust_repair_windows::TransactionProgress {
+							phase,
+							item: None,
+							item_count: 1,
+							cancellable: false,
+						}
+					))
+					.is_ok()
+			);
+		}
+		assert!(
+			sender
+				.send(Event::Done(Ok(Completed::Transaction(poll_outcome(
+					TransactionState::Applied,
+					true,
+				)))))
+				.is_ok()
+		);
+		ready.send(()).expect("test waits for queued notifications");
+		wait.recv().expect("test allows worker to exit");
+	});
+	started.recv().expect("worker queued progress and Done");
+	let cancellation = trust_repair_windows::Cancellation::default();
+	app.worker = Some(Worker {
+		cancellation: cancellation.clone(),
+		receiver,
+		handle,
+	});
+	app.closing = true;
+	app.poll();
+	assert!(app.worker.is_some() && app.pending.is_some() && app.outcome.is_none());
+	assert!(!app.cancellable);
+	assert_eq!(
+		app.progress,
+		Language::English.simple_phase(trust_repair_windows::TransactionPhase::Verify)
+	);
+	app.worker
+		.as_ref()
+		.expect("live worker retained")
+		.cancellation
+		.cancel();
+	assert!(cancellation.is_cancelled());
+	let context = egui::Context::default();
+	app.handle_close(&context);
+	assert!(!app.close_ready);
+	finish.send(()).expect("worker waits for test");
+	await_worker_finished(app.worker.as_ref().expect("worker still owned"));
+	app.poll();
+	app.handle_close(&context);
+	assert!(app.worker.is_none() && app.pending.is_none() && app.close_ready);
+	assert!(app.current_status == CurrentStatus::Disabled && app.outcome.is_some() && !app.error);
 }
 
 //------------------------------------------------------------------------------

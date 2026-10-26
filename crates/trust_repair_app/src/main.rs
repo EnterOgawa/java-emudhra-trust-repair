@@ -2,7 +2,7 @@
 /*!
  * - ファイル: main.rs
  * - 概要: 日英の native 画面から診断・適用・復元・未完了復旧を提供します。
- * - バージョン: 01.05.01
+ * - バージョン: 01.05.02
  * - 作成日: 2026/10/26
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -23,6 +23,7 @@
  * Ver.01.04.02  Shunji Ogawa  2026/10/26  Javaのバージョンを変更しない案内の日本語を修正。
  * Ver.01.05.00  Shunji Ogawa  2026/10/26  処理結果と通常と異なる環境の設定を別の折畳へ分離。
  * Ver.01.05.01  Shunji Ogawa  2026/10/26  exe と同じ自作アイコンをタイトルバーへ指定。
+ * Ver.01.05.02  Shunji Ogawa  2026/10/26  worker回収後の最終通知を採用し、受信との終了競合を修正。
  * ```
  *
  * 備考: password を保存・Debug しません。worker の回収前には終了しません。
@@ -42,7 +43,7 @@ mod worker;
 use eframe::egui::{self, Color32, RichText};
 use language::Language;
 use std::path::PathBuf;
-use std::sync::mpsc::TryRecvError;
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 use trust_repair_core::{IssueCode, PlanError, Policy, embedded_policy};
 use trust_repair_windows::{
@@ -55,6 +56,10 @@ use zeroize::{Zeroize, Zeroizing};
 
 // 同じ製品名を両言語で識別できるようにする
 const APP_TITLE: &str = "Java Trust Repair · eMudhra";
+
+/// 初回受信後に制御workerを終了させる、試験時だけの一回限りの同期処理です。
+#[cfg(test)]
+type AfterWorkerDrain = Box<dyn FnOnce(&Worker)>;
 
 /// 秘密入力と明示的な標準値の選択です。Debug・保存を実装しません。
 struct PasswordInput {
@@ -202,6 +207,9 @@ struct TrustRepairApp {
 	worker: Option<Worker>,
 	/// join前の完了通知。
 	pending: Option<Result<Completed, Failure>>,
+	/// 初回受信直後の終了競合を固定する、試験時だけの一回限りの同期点。
+	#[cfg(test)]
+	after_worker_drain: Option<AfterWorkerDrain>,
 	/// 簡潔な実工程の表示。
 	progress: String,
 	/// backendが通知した中断可否。
@@ -251,6 +259,8 @@ impl TrustRepairApp {
 			confirmation: None,
 			worker: None,
 			pending: None,
+			#[cfg(test)]
+			after_worker_drain: None,
 			progress: String::new(),
 			cancellable: true,
 			message: String::new(),
@@ -515,14 +525,44 @@ impl TrustRepairApp {
 		}
 	}
 	//------------------------------------------------------------------------------
-	/** 通知を受信し、完了済みthreadだけjoinします。ファイル処理や実行中waitをUIで行いません。 */
+	/**
+	 * 完了済みthreadだけjoinし、回収後の最終通知まで受信して結果を一度だけ採用します。
+	 * 実行中はworkerを保持し、panicまたは完了通知欠落だけを予期しない終了へ分類します。
+	 * ファイル処理や実行中waitをUIで行いません。
+	 */
 	//------------------------------------------------------------------------------
 	fn poll(&mut self) {
-		let Some(worker) = &self.worker else {
+		let Some(worker) = self.worker.take() else {
 			return;
 		};
+		self.drain_worker_events(&worker.receiver);
+		#[cfg(test)]
+		if let Some(after_drain) = self.after_worker_drain.take() {
+			after_drain(&worker);
+		}
+		if !worker.handle.is_finished() {
+			self.worker = Some(worker);
+			return;
+		}
+		let joined = worker.handle.join().is_ok();
+		// 初回Emptyの直後に送信されたDoneも、thread回収後なら漏れなく取得できる
+		self.drain_worker_events(&worker.receiver);
+		let result = match (joined, self.pending.take()) {
+			(true, Some(result)) => result,
+			_ => Err(Failure::Interrupted),
+		};
+		if let Some(generation) = self.automatic_generation.take() {
+			self.accept_auto_check(generation, result);
+		} else {
+			self.accept(result);
+		}
+	}
+	//------------------------------------------------------------------------------
+	/** 同じ通知処理で工程・中断可否・完了結果を受信します。実行中threadの通知は待ちません。 */
+	//------------------------------------------------------------------------------
+	fn drain_worker_events(&mut self, receiver: &Receiver<Event>) {
 		loop {
-			match worker.receiver.try_recv() {
+			match receiver.try_recv() {
 				Ok(Event::Scan(value)) => {
 					self.progress = self.language.simple_scan_phase(value.phase).to_owned();
 					self.cancellable = true;
@@ -537,20 +577,6 @@ impl TrustRepairApp {
 				}
 				Ok(Event::Done(result)) => self.pending = Some(result),
 				Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
-			}
-		}
-		if worker.handle.is_finished()
-			&& let Some(worker) = self.worker.take()
-		{
-			let result = if worker.handle.join().is_ok() {
-				self.pending.take().unwrap_or(Err(Failure::Interrupted))
-			} else {
-				Err(Failure::Interrupted)
-			};
-			if let Some(generation) = self.automatic_generation.take() {
-				self.accept_auto_check(generation, result);
-			} else {
-				self.accept(result);
 			}
 		}
 	}
