@@ -2,7 +2,7 @@
 /*!
  * - ファイル: process.rs
  * - 概要: 秘密を子専用環境で渡し、上限・中断・終了回収を持つ直接起動を提供します。
- * - バージョン: 01.00.02
+ * - バージョン: 01.00.03
  * - 作成日: 2026/10/26
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -23,6 +23,7 @@
  * Ver.01.00.00  Shunji Ogawa  2026/10/26  子の環境隔離と二つの pipe の同時 drain を追加。
  * Ver.01.00.01  Shunji Ogawa  2026/10/26  検証した stage 専用 delete 引数を追加。
  * Ver.01.00.02  Shunji Ogawa  2026/10/26  RFC 解析 payload は変更せず、非公開の所有 buffer を消去。
+ * Ver.01.00.03  Shunji Ogawa  2026/10/26  子終了の観測後に両 pipe を再検査し、最終出力を収集。
  * ```
  *
  * 備考:
@@ -364,6 +365,8 @@ fn run_with_limits_output(
 /**
  * 二つの pipe を片方で待たずに読み、上限・中断を 10ms 間隔で検査して子を wait します。
  * PeekNamedPipe で利用可能な byte だけ読むため、reader thread を detach しません。
+ * 終了観測より前の empty 判定は使わず、観測後に両 pipe が空になるまで交互に収集します。
+ * 継承先が writer を保持していても EOF を待たず、開始時からの時間・容量上限を維持します。
  */
 //------------------------------------------------------------------------------
 fn collect(
@@ -383,6 +386,7 @@ fn collect(
 	let started = Instant::now();
 	let mut stdout = Zeroizing::new(Vec::new());
 	let mut stderr = Zeroizing::new(Vec::new());
+	let mut exit_status = None;
 	// 子終了と両 pipe の残データ消費まで繰り返す。子が pipe を閉じなくても時間上限で終了する
 	loop {
 		if cancellation.is_cancelled() {
@@ -393,9 +397,10 @@ fn collect(
 		}
 		let out_count = drain_available(&mut stdout_pipe, &mut stdout, limit)?;
 		let err_count = drain_available(&mut stderr_pipe, &mut stderr, limit)?;
-		if let Some(status) = child
-			.try_wait()
-			.map_err(|error| io_error("try_wait", &error))?
+		#[cfg(test)]
+		tests::after_empty_drain(child, out_count, err_count);
+		// 子終了後の両 pipe の empty だけを、収集完了の証拠にする
+		if let Some(status) = exit_status
 			&& out_count == 0
 			&& err_count == 0
 		{
@@ -406,7 +411,14 @@ fn collect(
 				status,
 			));
 		}
-		if out_count == 0 && err_count == 0 {
+		// 初回の終了観測後は次周で必ず再 drain し、観測前の count では返さない
+		if exit_status.is_none() {
+			exit_status = child
+				.try_wait()
+				.map_err(|error| io_error("try_wait", &error))?;
+		}
+		// 実行中に出力がない場合だけ待機し、終了後の残データは続けて消費する
+		if out_count == 0 && err_count == 0 && exit_status.is_none() {
 			std::thread::sleep(Duration::from_millis(10));
 		}
 	}
@@ -539,12 +551,52 @@ pub(crate) fn java_path_argument(path: &Path) -> OsString {
 #[cfg(test)]
 mod tests {
 	use super::{
-		Cancellation, PASSWORD_ENV, PROCESS_TIMEOUT, ProcessError, StorePassword,
-		english_jvm_arguments, list_arguments, run_with_limits,
+		CREATE_NO_WINDOW, Cancellation, OwnedChild, PASSWORD_ENV, PROCESS_TIMEOUT, ProcessError,
+		StorePassword, collect, english_jvm_arguments, list_arguments, run_inventory,
+		run_with_limits,
 	};
+	use std::cell::RefCell;
 	use std::ffi::OsString;
-	use std::io::Write;
+	use std::io::{Read, Write};
+	use std::os::windows::process::CommandExt;
+	use std::process::{Child, Command, ExitStatus, Stdio};
 	use std::time::{Duration, Instant};
+
+	// 最終書込みだけで既定 pipe を満たさないよう、各 payload を 4KiB 未満に固定する
+	const TAIL_STDOUT: &str = concat!(
+		"stdout final: 0123456789abcdefghijklmnopqrstuvwxyz\n",
+		"0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz\n",
+		"0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz\n",
+		"stdout 最終出力完了\n",
+	);
+	const TAIL_STDERR: &str = concat!(
+		"stderr final: 0123456789abcdefghijklmnopqrstuvwxyz\n",
+		"0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz\n",
+		"0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz\n",
+		"warning: 終了直前の警告を保持\n",
+	);
+
+	/// 両 pipe の empty 検査直後だけ実子の終了を許可する、試験スレッド専用の同期処理です。
+	type EmptyDrainHook = Box<dyn FnOnce(&mut Child)>;
+
+	thread_local! {
+		// 他の並列テストや通常 build の子には同期処理を適用しない
+		static EMPTY_DRAIN_HOOK: RefCell<Option<EmptyDrainHook>> = const { RefCell::new(None) };
+	}
+
+	//------------------------------------------------------------------------------
+	/** 両 pipe が実際に空だった一回だけ、同じスレッドが登録した同期処理を実行します。 */
+	//------------------------------------------------------------------------------
+	pub(super) fn after_empty_drain(child: &mut Child, out_count: usize, err_count: usize) {
+		// 出力の収集中は子を待機させ、競合する二つの empty 判定の直後に限定する
+		if out_count == 0 && err_count == 0 {
+			let hook = EMPTY_DRAIN_HOOK.with(|slot| slot.borrow_mut().take());
+			// 同期点を明示登録した回帰だけが、実子の最終書込みと終了を許可する
+			if let Some(hook) = hook {
+				hook(child);
+			}
+		}
+	}
 
 	//------------------------------------------------------------------------------
 	/** 同じ test executable の一つの無視試験だけを子として起動する引数です。 */
@@ -590,14 +642,112 @@ mod tests {
 			let buffer = vec![b'x'; 2 * 1024 * 1024];
 			std::io::stdout().write_all(&buffer).expect("stdout");
 			std::io::stderr().write_all(&buffer).expect("stderr");
+		} else if mode == "tail" {
+			// 親の両 pipe の empty 検査後だけ書込み、libtest の末尾を加えず実終了する
+			let mut release = [0];
+			std::io::stdin().read_exact(&mut release).expect("release");
+			assert_eq!(release, [1]);
+			std::io::stdout()
+				.write_all(TAIL_STDOUT.as_bytes())
+				.expect("final stdout");
+			std::io::stdout().flush().expect("flush stdout");
+			std::io::stderr()
+				.write_all(TAIL_STDERR.as_bytes())
+				.expect("final stderr");
+			std::io::stderr().flush().expect("flush stderr");
+			std::process::exit(23);
 		} else if mode == "invalid-utf8" {
 			std::io::stdout().write_all(&[0xff]).expect("stdout");
+		} else if mode == "invalid-stderr-utf8" {
+			// 正常な stdout があっても stderr の不正 byte を成功にしない
+			std::io::stderr().write_all(&[0xff]).expect("stderr");
 		} else if mode == "fail" {
 			std::process::exit(19);
 		} else {
 			println!("{mode}");
 			eprintln!("{mode}");
 		}
+	}
+
+	//------------------------------------------------------------------------------
+	/**
+	 * 実子の最終書込みと終了を、両 pipe の empty と次の try_wait の間へ固定します。
+	 * 各 payload は pipe 容量未満のため、同期点で wait しても pipe 飽和を起こしません。
+	 * エラー時も本番と同じ所有 guard で kill/wait し、戻る前に実子の終了を照合します。
+	 */
+	//------------------------------------------------------------------------------
+	fn collect_tail_fixture(limit: usize) -> Result<(Vec<u8>, Vec<u8>, ExitStatus), ProcessError> {
+		let executable = std::env::current_exe().expect("test executable");
+		let child = Command::new(executable)
+			.args(fixture_arguments())
+			.env_clear()
+			.env(PASSWORD_ENV, "tail")
+			.stdin(Stdio::piped())
+			.stdout(Stdio::piped())
+			.stderr(Stdio::piped())
+			.creation_flags(CREATE_NO_WINDOW)
+			.spawn()
+			.expect("tail fixture");
+		let pid = child.id();
+		let mut owned = OwnedChild { child: Some(child) };
+		EMPTY_DRAIN_HOOK.with(|slot| {
+			assert!(
+				slot.borrow_mut()
+					.replace(Box::new(|child| {
+						child
+							.stdin
+							.take()
+							.expect("release pipe")
+							.write_all(&[1])
+							.expect("release child after empty");
+						assert_eq!(child.wait().expect("actual child exit").code(), Some(23));
+					}))
+					.is_none()
+			);
+		});
+		let result = collect(
+			owned.child.as_mut().expect("owned child"),
+			&Cancellation::default(),
+			Duration::from_secs(5),
+			limit,
+		);
+		EMPTY_DRAIN_HOOK.with(|slot| {
+			assert!(slot.borrow_mut().take().is_none(), "empty 同期点が未実行");
+		});
+		// 本番同様に成功時だけ所有を解除し、失敗時は最初の原因を保って終了回収する
+		let result = match result {
+			Ok(output) => {
+				owned.child = None;
+				Ok(output)
+			}
+			Err(error) => Err(owned.stop(error)),
+		};
+		assert!(!is_running(pid), "回収後に最終出力の子が残っています");
+		result
+	}
+
+	//------------------------------------------------------------------------------
+	/** empty→実子の両末尾書込み→終了→try_wait の順序でも、全 byte と終了コードを保持します。 */
+	//------------------------------------------------------------------------------
+	#[test]
+	fn collects_final_output_written_before_exit_observation() {
+		let (stdout, stderr, status) = collect_tail_fixture(4096).expect("final output");
+		assert!(
+			stdout.ends_with(TAIL_STDOUT.as_bytes()),
+			"stdout 末尾の欠落"
+		);
+		assert_eq!(stderr, TAIL_STDERR.as_bytes(), "stderr 警告末尾の欠落");
+		assert_eq!(status.code(), Some(23));
+		assert!(!status.success());
+	}
+
+	//------------------------------------------------------------------------------
+	/** 子終了後に初めて見える byte にも上限を適用し、部分出力を成功として返しません。 */
+	//------------------------------------------------------------------------------
+	#[test]
+	fn enforces_limit_on_output_written_before_exit_observation() {
+		let result = collect_tail_fixture(128);
+		assert!(matches!(result, Err(ProcessError::OutputLimit)));
 	}
 
 	//------------------------------------------------------------------------------
@@ -630,7 +780,7 @@ mod tests {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 子が秘密を出力しても結果/Debug/引数へ漏らさず、異常終了と UTF8 違反を拒否します。 */
+	/** 表示用の秘密除去と解析用の無改変を守り、異常終了と両 stream の UTF8 違反を拒否します。 */
 	//------------------------------------------------------------------------------
 	#[test]
 	fn redacts_secrets_and_rejects_exit_and_encoding_failures() {
@@ -647,6 +797,15 @@ mod tests {
 		.expect("echo");
 		assert!(!output.stdout.contains("EchoTestSecret123"));
 		assert!(!output.stderr.contains("EchoTestSecret123"));
+		let inventory = run_inventory(
+			&executable,
+			&fixture_arguments(),
+			&password,
+			&Cancellation::default(),
+		)
+		.expect("raw inventory output");
+		assert!(inventory.stdout.contains("EchoTestSecret123"));
+		assert!(inventory.stderr.contains("EchoTestSecret123"));
 		assert!(!format!("{password:?}").contains("EchoTestSecret123"));
 		assert!(
 			!format!(
@@ -660,6 +819,7 @@ mod tests {
 		// UTF8 違反と終了コード異常を別々に起こして分類を照合する
 		for (mode, expected) in [
 			("invalid-utf8", ProcessError::InvalidUtf8),
+			("invalid-stderr-utf8", ProcessError::InvalidUtf8),
 			(
 				"fail",
 				ProcessError::Unsuccessful {
