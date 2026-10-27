@@ -1,6 +1,6 @@
 # 🛡️ Java Trust Repair · eMudhra
 
-Javaの版はそのままで、eMudhra関連ルートの信頼を解除したい。
+Javaのバージョンを変更せずに、eMudhra関連のルート証明書を無効化したい。
 そんな環境で、[Oracleの回避策](https://ops.java/emudhra)に沿って関連4ルートを信頼ストアから削除する、Windows用アプリです。
 変更前のバックアップを作り、必要になったらアプリから元に戻せます。
 
