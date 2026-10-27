@@ -2,8 +2,8 @@
 /*!
  * - ファイル: lib.rs
  * - 概要: Windows 境界の crate と対象ビルドの確認入口を提供します。
- * - バージョン: 01.03.02
- * - 作成日: 2026/10/26
+ * - バージョン: 01.00.00
+ * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
  *
@@ -20,12 +20,7 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/26  Windows x64 MSVC ビルドの確認と OS 境界を追加。
- * Ver.01.01.00  Shunji Ogawa  2026/10/26  読み取り snapshot・Java 選択・診断を公開。
- * Ver.01.02.00  Shunji Ogawa  2026/10/26  backup・適用・復元・履歴と未完了復旧を公開。
- * Ver.01.03.00  Shunji Ogawa  2026/10/26  Windows 表示言語を安全な境界から公開。
- * Ver.01.03.01  Shunji Ogawa  2026/10/26  通常 build から除外した内部 QA の停止境界を追加。
- * Ver.01.03.02  Shunji Ogawa  2026/10/26  表示用のWindowsフォントディレクトリ取得を公開。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
  * ```
  *
  * 備考:
@@ -100,6 +95,10 @@ impl fmt::Display for UnsupportedTarget {
 	 * # Arguments
 	 *
 	 * - `formatter`: 本呼出し中だけ可変借用する出力先。
+	 *
+	 * # Returns
+	 *
+	 * 出力先の書込みに成功すれば `Ok(())`。
 	 *
 	 * # Errors
 	 *

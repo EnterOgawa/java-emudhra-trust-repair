@@ -1,9 +1,23 @@
-# ファイル: build.ps1 / バージョン: 01.00.00
-# 作成日: 2026/10/26 / 制作者: Shunji Ogawa
-# Copyright (c) 2026 EnterSystem CO.,LTD.
-# SPDX-License-Identifier: Apache-2.0
-# 更新履歴: Ver.01.00.00 Shunji Ogawa 2026/10/26 通常releaseをoutputへ配置。
-# Cargo内部のcacheはtarget側に保持し、受渡しexeと許諾だけをoutputへ出力する。
+#------------------------------------------------------------------------------
+<#
+ファイル: build.ps1
+概要: 通常 release を構築し、実行ファイルと必要な許諾を output へ配置します。
+バージョン: 01.00.00
+作成日: 2026/10/27
+制作者: Shunji Ogawa
+著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
+
+ライセンス: SPDX-License-Identifier: Apache-2.0
+Apache License, Version 2.0。全文はルートの LICENSE を参照してください。
+会社名: EnterSystem
+
+更新履歴:
+Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
+
+備考: Cargo の cache は target 側に保持します。成功した exe と許諾だけを output へ配置します。
+既存 exe が使用中などで置換に失敗した場合は、その exe を保持します。
+#>
+#------------------------------------------------------------------------------
 $ErrorActionPreference = 'Stop'
 $temporaryExe = $null
 Push-Location -LiteralPath $PSScriptRoot

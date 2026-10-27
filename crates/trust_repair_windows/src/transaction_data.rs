@@ -2,8 +2,8 @@
 /*!
  * - ファイル: transaction_data.rs
  * - 概要: manifest と順序付き journal の schema・上限・復旧入力を検証します。
- * - バージョン: 01.00.01
- * - 作成日: 2026/10/26
+ * - バージョン: 01.00.00
+ * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
  *
@@ -20,8 +20,7 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/26  immutable manifest、順序 journal と検査を追加。
- * Ver.01.00.01  Shunji Ogawa  2026/10/26  明示内部 QA で sync 済み境界を観測可能にした。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
  * ```
  *
  * 備考:
@@ -94,12 +93,23 @@ pub(crate) struct SavedInventory {
 
 impl SavedInventory {
 	//------------------------------------------------------------------------------
-	/** 検証済み inventory だけを保存形式へ移します。鍵混在では変更計画を拒否します。 */
+	/**
+	 * 検証済み inventory だけを保存形式へ移します。鍵混在では変更計画を拒否します。
+	 *
+	 * # Returns
+	 *
+	 * 入力を借用せず、全別名・DER ハッシュ・形式を所有する保存用 inventory。
+	 *
+	 * # Errors
+	 *
+	 * trustedCertEntry 以外のエントリ、または証明書が一件でないエントリを含む場合。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn from_inventory(value: &StoreInventory) -> Result<Self, TransactionError> {
 		let mut entries = Vec::new();
 		// 証明書 entry 一件ごとの完全な別名と DER hash を保存する
 		for entry in value.entries() {
+			// 単一証明書の trustedCertEntry だけを保存し、鍵混在を変更計画へ持ち込まない
 			if entry.kind() != EntryKind::TrustedCertificate || entry.certificates().len() != 1 {
 				return Err(invalid());
 			}
@@ -110,6 +120,7 @@ impl SavedInventory {
 			});
 		}
 		Ok(Self {
+			// 実際のストア形式を保存し、復元時の形式保持の基準にする
 			format: match value.format() {
 				StoreFormat::Jks => SavedFormat::Jks,
 				StoreFormat::Pkcs12 => SavedFormat::Pkcs12,
@@ -119,7 +130,17 @@ impl SavedInventory {
 	}
 
 	//------------------------------------------------------------------------------
-	/** DER 定義の全一致を除いた期待 inventory を作ります。別名を削除条件にしません。 */
+	/**
+	 * DER 定義の全一致を除いた期待 inventory を作ります。別名を削除条件にしません。
+	 *
+	 * # Arguments
+	 *
+	 * - `policy`: 除外する証明書を DER ハッシュの完全一致で指定する定義。
+	 *
+	 * # Returns
+	 *
+	 * 対象 DER を持つエントリを除いた、新しい期待 inventory。元の一覧は変更しません。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn without_targets(&self, policy: &Policy) -> Self {
 		Self {
@@ -139,7 +160,9 @@ impl SavedInventory {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 復元入力の件数/文字/重複/hash/順序を検査します。 */
+	/**
+	 * 復元入力の件数/文字/重複/hash/順序を検査します。
+	 */
 	//------------------------------------------------------------------------------
 	fn validate(&self) -> bool {
 		self.entries.len() <= 100_000
@@ -203,10 +226,22 @@ pub(crate) struct Manifest {
 
 impl Manifest {
 	//------------------------------------------------------------------------------
-	/** schema、policy、path、重複、snapshot と全差分を検証します。disk 内容は別途照合します。 */
+	/**
+	 * schema、policy、path、重複、snapshot と全差分を検証します。disk 内容は別途照合します。
+	 *
+	 * # Arguments
+	 *
+	 * - `id`: 読み込んだ directory に要求する transaction ID。
+	 * - `root`: 記録内の対象パスが入り込んではならない backup root。
+	 *
+	 * # Errors
+	 *
+	 * schema・定義・パス・件数・重複・snapshot・全差分のいずれかが不正な場合。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn validate(&self, id: &str, root: &Path) -> Result<(), TransactionError> {
 		let policy = embedded_policy().map_err(|_| invalid())?;
+		// schema・版・定義・Java・件数を先に確認し、未知の保存形式を解釈しない
 		if self.schema_version != 1
 			|| !valid_id(id)
 			|| self.transaction_id != id
@@ -230,6 +265,7 @@ impl Manifest {
 				.iter()
 				.zip(["release", "bin/java.exe", "bin/keytool.exe"])
 		{
+			// 三つの Java snapshot が、保存時 root の既知の位置に対応することを確認する
 			if !valid_snapshot(snapshot) || snapshot.canonical_path() != self.java_root.join(suffix)
 			{
 				return Err(invalid());
@@ -250,6 +286,7 @@ impl Manifest {
 				.cloned()
 				.collect();
 			let identity = item.original.identity();
+			// 対象・差分・保存名・metadata・重複を全て照合し、任意パスや計画外削除を拒否する
 			if !valid_snapshot(&item.original)
 				|| !valid_snapshot(&item.applied)
 				|| item.applied.canonical_path() != target
@@ -360,7 +397,18 @@ pub(crate) struct Journal {
 
 impl Journal {
 	//------------------------------------------------------------------------------
-	/** 新規 journal を作ります。既存の記録は上書きしません。 */
+	/**
+	 * 新規 journal を作ります。既存の記録は上書きしません。
+	 *
+	 * # Returns
+	 *
+	 * create_new で作成した空の journal の所有者。ファイルは drop 時に閉じます。
+	 * Prepared などの記録は、呼出し側が別途 append します。
+	 *
+	 * # Errors
+	 *
+	 * 新規 file の作成に失敗した場合。既存の記録へ切り替えて追記しません。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn create(path: &Path) -> Result<Self, TransactionError> {
 		let file = OpenOptions::new()
@@ -377,9 +425,25 @@ impl Journal {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 読戻し照合済みの正常 journal を追記用に開きます。破断 journal は修復せず拒否します。 */
+	/**
+	 * 読戻し照合済みの正常 journal を追記用に開きます。破断 journal は修復せず拒否します。
+	 *
+	 * # Arguments
+	 *
+	 * - `path`: 既に読戻し検証した journal。
+	 * - `status`: 読み取った正常状態・次番号・有効 byte 数。
+	 *
+	 * # Returns
+	 *
+	 * 同じ正常記録の末尾に追記する所有者。
+	 *
+	 * # Errors
+	 *
+	 * 破断、byte 長の変化、追記 handle の取得、または file 長の再取得の失敗。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn resume(path: &Path, status: &JournalStatus) -> Result<Self, TransactionError> {
+		// 破断した元 journal へ追記せず、新規 recovery journal に証拠を分ける
 		if status.torn_tail {
 			return Err(TransactionError::new(
 				TransactionCode::InvalidJournal,
@@ -391,6 +455,7 @@ impl Journal {
 			.share_mode(FILE_SHARE_READ)
 			.open(path)
 			.map_err(|error| TransactionError::io(TransactionPhase::Recovery, path, error))?;
+		// 読込み後に byte 長が変化した journal へ、古い番号で追記しない
 		if file
 			.metadata()
 			.map_err(|error| TransactionError::io(TransactionPhase::Recovery, path, error))?
@@ -409,7 +474,19 @@ impl Journal {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 一つの型付き記録を改行と共に flush/sync します。失敗を成功状態へ変換しません。 */
+	/**
+	 * 一つの型付き記録を改行と共に flush/sync します。失敗を成功状態へ変換しません。
+	 *
+	 * # Arguments
+	 *
+	 * - `event`: 追記する状態遷移。
+	 * - `item`: 個別対象なら 0 始まりの位置、群全体なら `None`。
+	 *
+	 * # Errors
+	 *
+	 * 以前の書込み失敗、または JSON 化・write・flush・sync の失敗。
+	 * 失敗時は次番号を進めません。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn append(
 		&mut self,
@@ -420,9 +497,20 @@ impl Journal {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 復元の新規 stage/recovery の位置を、開始前に journal へ固定します。 */
+	/**
+	 * 復元の新規 stage/recovery の位置を、開始前に journal へ固定します。
+	 *
+	 * # Arguments
+	 *
+	 * - `operation`: 今回の復元用 stage/recovery を識別する新規操作 ID。
+	 *
+	 * # Errors
+	 *
+	 * 操作 ID の不正、以前の書込み失敗、または Restoring 記録の JSON 化・追記・flush・sync の失敗。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn start_restore(&mut self, operation: &str) -> Result<(), TransactionError> {
+		// 復元操作 ID もパス区切りを受理せず、stage の保存位置を固定する
 		if !valid_id(operation) {
 			return Err(invalid());
 		}
@@ -430,7 +518,20 @@ impl Journal {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 型付き記録を一行ずつ永続化します。追記失敗時は番号を進めません。 */
+	/**
+	 * 型付き記録を一行ずつ永続化します。追記失敗時は番号を進めません。
+	 *
+	 * # Arguments
+	 *
+	 * - `event`: 記録する状態遷移。
+	 * - `item`: 個別対象なら 0 始まりの位置。
+	 * - `operation_id`: Restoring のときだけ記録する復元操作 ID。
+	 *
+	 * # Errors
+	 *
+	 * 以前の書込み失敗、または JSON 化・write・flush・sync の失敗。
+	 * 書込み済み byte は取り消さず、次番号を進めません。
+	 */
 	//------------------------------------------------------------------------------
 	fn append_record(
 		&mut self,
@@ -438,6 +539,7 @@ impl Journal {
 		item: Option<usize>,
 		operation_id: Option<String>,
 	) -> Result<(), TransactionError> {
+		// 一度書込みに失敗した記録は再使用せず、破断末尾への追記を防ぐ
 		if self.poisoned {
 			return Err(TransactionError::new(
 				TransactionCode::InvalidJournal,
@@ -452,6 +554,7 @@ impl Journal {
 		};
 		let mut bytes = serde_json::to_vec(&record).map_err(|_| invalid())?;
 		bytes.push(b'\n');
+		// write・flush・sync のいずれかが失敗したら、以後の追記を禁止して原因を返す
 		if let Err(error) = self
 			.file
 			.write_all(&bytes)
@@ -473,7 +576,23 @@ impl Journal {
 }
 
 //------------------------------------------------------------------------------
-/** 先頭から順序/状態/範囲を検査し、末尾未改行の破断だけを安全な解析結果に残します。 */
+/**
+ * 先頭から順序/状態/範囲を検査し、末尾未改行の破断だけを安全な解析結果に残します。
+ *
+ * # Arguments
+ *
+ * - `path`: 容量を制限して読み取る既存 journal。
+ * - `count`: item 番号の上限となる manifest の項目数。
+ *
+ * # Returns
+ *
+ * 完全な行から復元した状態と次番号。空記録や未改行末尾は torn_tail として保持します。
+ *
+ * # Errors
+ *
+ * snapshot の取得、JSON、番号・item 範囲・状態遷移・operation ID の不整合。
+ * 末尾破断という分類を、他の I/O・構文エラーの代わりに使用しません。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn read_journal(path: &Path, count: usize) -> Result<JournalStatus, TransactionError> {
 	let (_, bytes) = read_snapshot(path, MAX_DOCUMENT_BYTES)
@@ -490,6 +609,7 @@ pub(crate) fn read_journal(path: &Path, count: usize) -> Result<JournalStatus, T
 	let mut pending: Option<(JournalEvent, usize)> = None;
 	// 完全な各行だけを状態機械へ渡し、最後の破断を完了記録とはしない
 	for line in bytes.split_inclusive(|byte| *byte == b'\n') {
+		// 未改行の最後の行は状態遷移へ渡さず、破断として保全する
 		if line.last() != Some(&b'\n') {
 			status.torn_tail = true;
 			break;
@@ -497,6 +617,7 @@ pub(crate) fn read_journal(path: &Path, count: usize) -> Result<JournalStatus, T
 		let record: JournalRecord = serde_json::from_slice(line).map_err(|_| {
 			TransactionError::new(TransactionCode::InvalidJournal, TransactionPhase::History)
 		})?;
+		// 連番と最初の Prepared を要求し、途中から始まる正常記録を認めない
 		if record.sequence != status.next
 			|| record.sequence == 1 && record.event != JournalEvent::Prepared
 		{
@@ -507,6 +628,7 @@ pub(crate) fn read_journal(path: &Path, count: usize) -> Result<JournalStatus, T
 		}
 		use JournalEvent as E;
 		use TransactionState as S;
+		// 復元操作 ID は Restoring のときだけ許可し、状態と保存位置の対応を守る
 		if (record.event == E::Restoring && !record.operation_id.as_deref().is_some_and(valid_id))
 			|| (record.event != E::Restoring && record.operation_id.is_some())
 		{
@@ -524,6 +646,7 @@ pub(crate) fn read_journal(path: &Path, count: usize) -> Result<JournalStatus, T
 				| E::RestoreStarted
 				| E::RestoreVerified
 		);
+		// item の有無と範囲を工程の種類に合わせ、群と個別対象の記録を混同しない
 		if item_event && !record.item.is_some_and(|item| item < count)
 			|| !item_event && record.item.is_some()
 		{
@@ -532,6 +655,7 @@ pub(crate) fn read_journal(path: &Path, count: usize) -> Result<JournalStatus, T
 				TransactionPhase::History,
 			));
 		}
+		// 状態機械の許可順序だけを受理し、開始・検証・完了の順番を飛ばさない
 		let valid = match record.event {
 			E::Prepared => record.sequence == 1 && record.item.is_none(),
 			E::Committing => {
@@ -578,12 +702,14 @@ pub(crate) fn read_journal(path: &Path, count: usize) -> Result<JournalStatus, T
 			E::Restored => status.state == S::Restoring && record.item.is_none(),
 			E::RestoreRolledBack => status.state == S::RollingBack && pending.is_none(),
 		};
+		// 不正な遷移を補正せず、以降の記録を正常状態の根拠にしない
 		if !valid {
 			return Err(TransactionError::new(
 				TransactionCode::InvalidJournal,
 				TransactionPhase::History,
 			));
 		}
+		// 検証済みの event を、状態・未検証 item・復元操作 ID へ反映する
 		match record.event {
 			E::ReplaceStarted | E::RollbackStarted | E::RestoreStarted => {
 				let item = record.item.filter(|item| *item < count).ok_or_else(|| {
@@ -630,6 +756,7 @@ pub(crate) fn read_journal(path: &Path, count: usize) -> Result<JournalStatus, T
 		status.next += 1;
 		status.valid_bytes += line.len() as u64;
 	}
+	// Prepared の完全行さえない空記録も、正常な完了 journal と扱わない
 	if status.next == 1 {
 		status.torn_tail = true;
 	}
@@ -638,16 +765,24 @@ pub(crate) fn read_journal(path: &Path, count: usize) -> Result<JournalStatus, T
 }
 
 //------------------------------------------------------------------------------
-/** 小さい immutable JSON を新規保存し、sync と byte 全一致の読戻しを検証します。 */
+/**
+ * 小さい immutable JSON を新規保存し、sync と byte 全一致の読戻しを検証します。
+ *
+ * # Errors
+ *
+ * 容量上限、JSON 化、新規保存・sync・読戻し、または byte 全一致の検証に失敗した場合。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn write_manifest(path: &Path, manifest: &Manifest) -> Result<(), TransactionError> {
 	let bytes = serde_json::to_vec_pretty(manifest).map_err(|_| invalid())?;
+	// manifest の保存前に上限を確認し、過大な復元材料を作らない
 	if bytes.len() > MAX_DOCUMENT_BYTES {
 		return Err(invalid());
 	}
 	write_new(path, &bytes, TransactionPhase::Prepare)?;
 	let (_, actual) = read_snapshot(path, MAX_DOCUMENT_BYTES)
 		.map_err(|error| TransactionError::file(TransactionPhase::Prepare, path, error))?;
+	// 保存した immutable manifest の byte 全一致を読戻して確認する
 	if actual != bytes {
 		return Err(invalid());
 	}
@@ -657,7 +792,19 @@ pub(crate) fn write_manifest(path: &Path, manifest: &Manifest) -> Result<(), Tra
 }
 
 //------------------------------------------------------------------------------
-/** 新規 file だけに書込み、flush と sync を成功条件にします。失敗物は削除しません。 */
+/**
+ * 新規 file だけに書込み、flush と sync を成功条件にします。失敗物は削除しません。
+ *
+ * # Arguments
+ *
+ * - `path`: create_new で作る保存先。既存 file は受け付けません。
+ * - `bytes`: 全体を保存して flush/sync する内容。
+ * - `phase`: I/O 失敗へ付ける工程。
+ *
+ * # Errors
+ *
+ * 作成、全書込み、flush、sync のいずれかの失敗。途中の新規 file は証拠として残します。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn write_new(
 	path: &Path,
@@ -675,6 +822,7 @@ pub(crate) fn write_new(
 		.and_then(|_| file.sync_all())
 		.map_err(|error| TransactionError::io(phase, path, error))?;
 	#[cfg(feature = "internal-qa")]
+	// 明示 QA だけで保存済み境界を通知し、通常保存の成否や内容は変更しない
 	if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
 		crate::qa_checkpoint(&format!("saved-{name}"), None);
 	}
@@ -682,7 +830,17 @@ pub(crate) fn write_new(
 }
 
 //------------------------------------------------------------------------------
-/** 制限 root 内の manifest だけを読みます。内容の schema 検証は呼出し側で実施します。 */
+/**
+ * 制限 root 内の manifest だけを読みます。内容の schema 検証は呼出し側で実施します。
+ *
+ * # Returns
+ *
+ * 容量上限内で JSON として解析した manifest。schema の意味検証は未実施です。
+ *
+ * # Errors
+ *
+ * snapshot の取得または JSON 解析の失敗。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn load_manifest(path: &Path) -> Result<Manifest, TransactionError> {
 	let (_, bytes) = read_snapshot(path, MAX_DOCUMENT_BYTES)
@@ -691,7 +849,9 @@ pub(crate) fn load_manifest(path: &Path) -> Result<Manifest, TransactionError> {
 }
 
 //------------------------------------------------------------------------------
-/** 既存を上書きしない ID の字句形式を検査します。path separator を受理しません。 */
+/**
+ * 既存を上書きしない ID の字句形式を検査します。path separator を受理しません。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn valid_id(id: &str) -> bool {
 	id.len() == 53
@@ -705,7 +865,9 @@ pub(crate) fn valid_id(id: &str) -> bool {
 }
 
 //------------------------------------------------------------------------------
-/** SHA-256 の上位文字を正規形とし、不正な長さや文字は補正しません。 */
+/**
+ * SHA-256 の上位文字を正規形とし、不正な長さや文字は補正しません。
+ */
 //------------------------------------------------------------------------------
 fn valid_hash(value: &str) -> bool {
 	value.len() == 64
@@ -715,14 +877,27 @@ fn valid_hash(value: &str) -> bool {
 }
 
 //------------------------------------------------------------------------------
-/** 未存在 path も検査できる、純粋な DOS path の字句検査です。実体検査は別に必須です。 */
+/**
+ * 未存在 path も検査できる、純粋な DOS path の字句検査です。実体検査は別に必須です。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn valid_path(path: &Path) -> bool {
-	path.to_str().is_some_and(|value| value.len() <= 32_000 && !value.chars().any(char::is_control)) && path.is_absolute() && matches!(path.components().next(), Some(Component::Prefix(prefix)) if matches!(prefix.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_))) && path.components().all(|part| !matches!(part, Component::ParentDir | Component::CurDir) && !matches!(part, Component::Normal(value) if value.to_str().is_none_or(|value| value.contains(':'))))
+	path.to_str()
+		.is_some_and(|value| value.len() <= 32_000 && !value.chars().any(char::is_control))
+		&& path.is_absolute()
+		&& matches!(
+			path.components().next(),
+			Some(Component::Prefix(prefix))
+				if matches!(prefix.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_))
+		)
+		&& path.components().all(|part| !matches!(part, Component::ParentDir | Component::CurDir)
+			&& !matches!(part, Component::Normal(value) if value.to_str().is_none_or(|value| value.contains(':'))))
 }
 
 //------------------------------------------------------------------------------
-/** snapshot を信用する前に path/上限/hash/metadata の schema を検査します。 */
+/**
+ * snapshot を信用する前に path/上限/hash/metadata の schema を検査します。
+ */
 //------------------------------------------------------------------------------
 fn valid_snapshot(snapshot: &FileSnapshot) -> bool {
 	valid_path(snapshot.canonical_path())
@@ -736,7 +911,9 @@ fn valid_snapshot(snapshot: &FileSnapshot) -> bool {
 }
 
 //------------------------------------------------------------------------------
-/** 更新日時を除く、維持必須 metadata の完全一致を調べます。 */
+/**
+ * 更新日時を除く、維持必須 metadata の完全一致を調べます。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn same_preserved_metadata(left: &FileSnapshot, right: &FileSnapshot) -> bool {
 	left.attributes() == right.attributes()
@@ -745,7 +922,9 @@ pub(crate) fn same_preserved_metadata(left: &FileSnapshot, right: &FileSnapshot)
 }
 
 //------------------------------------------------------------------------------
-/** byte hash と全保持 metadata/更新日時を比較します。復元で file ID の再利用は要求しません。 */
+/**
+ * byte hash と全保持 metadata/更新日時を比較します。復元で file ID の再利用は要求しません。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn same_content_metadata(left: &FileSnapshot, right: &FileSnapshot) -> bool {
 	left.sha256() == right.sha256()
@@ -757,14 +936,32 @@ pub(crate) fn same_content_metadata(left: &FileSnapshot, right: &FileSnapshot) -
 }
 
 //------------------------------------------------------------------------------
-/** backup の相対 file 名を位置から一意に生成します。 */
+/**
+ * backup の相対 file 名を位置から一意に生成します。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn backup_name(index: usize) -> String {
 	format!("{index:04}.original.bin")
 }
 
 //------------------------------------------------------------------------------
-/** 隣接 work directory を target と ID/位置から決め、manifest の任意相対 path を使いません。 */
+/**
+ * 隣接 work directory を target と ID/位置から決め、manifest の任意相対 path を使いません。
+ *
+ * # Arguments
+ *
+ * - `target`: 隣接する専用 work directory の基準となる元対象。
+ * - `id`: 保存済みの transaction または復元操作の ID。
+ * - `index`: manifest 内の 0 始まりの位置。
+ *
+ * # Returns
+ *
+ * 元対象の親の下にある、ID と位置から導いた専用 directory のパス。
+ *
+ * # Errors
+ *
+ * 元対象の親パスを取得できない場合。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn work_directory(
 	target: &Path,
@@ -778,7 +975,9 @@ pub(crate) fn work_directory(
 }
 
 //------------------------------------------------------------------------------
-/** schema/整合性失敗の型付き値を作ります。入力本文は保存しません。 */
+/**
+ * schema/整合性失敗の型付き値を作ります。入力本文は保存しません。
+ */
 //------------------------------------------------------------------------------
 fn invalid() -> TransactionError {
 	TransactionError::new(TransactionCode::InvalidManifest, TransactionPhase::History)

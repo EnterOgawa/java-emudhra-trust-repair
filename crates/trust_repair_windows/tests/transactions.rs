@@ -2,8 +2,8 @@
 /*!
  * - ファイル: transactions.rs
  * - 概要: 隔離した実 Java で適用・全件検証・復元と失敗時の保全を確認します。
- * - バージョン: 01.01.00
- * - 作成日: 2026/10/26
+ * - バージョン: 01.00.00
+ * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
  *
@@ -20,9 +20,7 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/26  四 LTS・両形式の実 keytool 適用/復元試験を追加。
- * Ver.01.00.01  Shunji Ogawa  2026/10/26  内部 QA の新規領域も明示された隔離 root として許可。
- * Ver.01.01.00  Shunji Ogawa  2026/10/26  Java内backupの四LTS往復、既存root/権限/移動/未完了拒否を検証。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
  * ```
  *
  * 備考:
@@ -52,7 +50,9 @@ use trust_repair_windows::{
 static NEXT_CASE: AtomicUsize = AtomicUsize::new(0);
 
 //------------------------------------------------------------------------------
-/** 明示 root を workspace の transaction 隔離領域に限定します。実 Java は受け付けません。 */
+/**
+ * 明示 root を workspace の transaction 隔離領域に限定します。実 Java は受け付けません。
+ */
 //------------------------------------------------------------------------------
 fn fixtures() -> PathBuf {
 	let root = PathBuf::from(
@@ -79,13 +79,17 @@ fn fixtures() -> PathBuf {
 }
 
 //------------------------------------------------------------------------------
-/** 既知の通常 file だけから新規の隔離 case へコピーします。既存 case を上書きしません。 */
+/**
+ * 既知の通常 file だけから新規の隔離 case へコピーします。既存 case を上書きしません。
+ */
 //------------------------------------------------------------------------------
 fn copy_directory(source: &Path, destination: &Path) {
 	fs::create_dir(destination).expect("新規 directory");
+	// 既知 fixture の全要素を新規 case へ複写し、元の試験材料を変更しない
 	for entry in fs::read_dir(source).expect("source") {
 		let entry = entry.expect("entry");
 		let target = destination.join(entry.file_name());
+		// directory は再帰複写し、file は新規作成で複写して既存 case の再利用を避ける
 		if entry.file_type().expect("type").is_dir() {
 			copy_directory(&entry.path(), &target);
 		} else {
@@ -96,14 +100,18 @@ fn copy_directory(source: &Path, destination: &Path) {
 }
 
 //------------------------------------------------------------------------------
-/** 検証専用の非秘密 password を製品と同じ所有型へ渡します。 */
+/**
+ * 検証専用の非秘密 password を製品と同じ所有型へ渡します。
+ */
 //------------------------------------------------------------------------------
 fn password() -> StorePassword {
 	StorePassword::new("changeit".to_owned()).expect("test password")
 }
 
 //------------------------------------------------------------------------------
-/** 後続 case の基準を変えないよう、Java と両 custom を丸ごと新規コピーします。 */
+/**
+ * 後続 case の基準を変えないよう、Java と両 custom を丸ごと新規コピーします。
+ */
 //------------------------------------------------------------------------------
 fn case(major: u16, label: &str) -> (PathBuf, PathBuf, TransactionOptions) {
 	let fixture = fixtures();
@@ -115,6 +123,7 @@ fn case(major: u16, label: &str) -> (PathBuf, PathBuf, TransactionOptions) {
 	fs::create_dir(&root).expect("new case");
 	let java = root.join(format!("Java {major} 適用 復元"));
 	copy_directory(&fixture.join(format!("Java {major} 適用 復元")), &java);
+	// 両形式の custom も独立した case へ複写する
 	for name in ["custom 日本語.jks", "custom 日本語.p12"] {
 		fs::copy(fixture.join(name), root.join(name)).expect("custom copy");
 	}
@@ -124,12 +133,15 @@ fn case(major: u16, label: &str) -> (PathBuf, PathBuf, TransactionOptions) {
 }
 
 //------------------------------------------------------------------------------
-/** 四 LTS/両形式で全非対象保持・再診断未検出・完全復元・二重復元を実測します。 */
+/**
+ * 四 LTS/両形式で全非対象保持・再診断未検出・完全復元・二重復元を実測します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "明示された新規 transaction fixtures が必要"]
 fn applies_rediagnoses_and_restores_four_lts_both_formats() {
 	let policy = embedded_policy().expect("policy");
+	// 四つの対応 LTS の全てで、適用から完全復元まで同じ契約を確認する
 	for major in [11, 17, 21, 25] {
 		let (root, java, legacy_options) = case(major, "roundtrip");
 		let cancellation = Cancellation::default();
@@ -210,6 +222,7 @@ fn applies_rediagnoses_and_restores_four_lts_both_formats() {
 			|_| {},
 		);
 		assert_eq!(after.plan(&policy), Err(PlanError::NoTargets));
+		// 変更対象外も含め、診断群の形式と非対象 inventory の保持を確認する
 		for (before, after) in group.stores().iter().zip(after.stores()) {
 			assert!(after.report().targets().is_empty());
 			let old = before.report().inventory().expect("old inventory");
@@ -240,6 +253,7 @@ fn applies_rediagnoses_and_restores_four_lts_both_formats() {
 		)
 		.expect("restore");
 		assert_eq!(restored.state, TransactionState::Restored);
+		// 元の全 snapshot を再照合し、復元後の内容・実体・metadata の契約を確認する
 		for source in &original {
 			assert_eq!(
 				sha256_hex(&fs::read(source.canonical_path()).expect("restored bytes")),
@@ -254,6 +268,7 @@ fn applies_rediagnoses_and_restores_four_lts_both_formats() {
 			&cancellation,
 			|_| {},
 		);
+		// 全ストアの inventory を元診断と照合し、byte だけで復元成功を判断しない
 		for (old, new) in group.stores().iter().zip(rescanned.stores()) {
 			assert_eq!(old.report().inventory(), new.report().inventory());
 		}
@@ -294,23 +309,30 @@ struct PreparedCase {
 
 impl PreparedCase {
 	//------------------------------------------------------------------------------
-	/** 一回の操作でだけ借用する、診断群順の password 一覧を作ります。 */
+	/**
+	 * 一回の操作でだけ借用する、診断群順の password 一覧を作ります。
+	 */
 	//------------------------------------------------------------------------------
 	fn passwords(&self) -> Vec<&StorePassword> {
 		vec![&self.secret; self.group.stores().len()]
 	}
 
 	//------------------------------------------------------------------------------
-	/** manifest 順の password 一覧を作ります。対象ゼロ store の分を含めません。 */
+	/**
+	 * manifest 順の password 一覧を作ります。対象ゼロ store の分を含めません。
+	 */
 	//------------------------------------------------------------------------------
 	fn restore_passwords(&self) -> Vec<&StorePassword> {
 		vec![&self.secret; self.plan.stores().len()]
 	}
 
 	//------------------------------------------------------------------------------
-	/** 元群の raw byte hash がすべて診断時と同じことを確認します。 */
+	/**
+	 * 元群の raw byte hash がすべて診断時と同じことを確認します。
+	 */
 	//------------------------------------------------------------------------------
 	fn assert_original(&self) {
+		// 全入力の raw byte を再取得し、失敗注入後に部分変更が残らないことを確認する
 		for store in self.group.stores() {
 			let original = store.snapshot().expect("snapshot");
 			assert_eq!(
@@ -322,7 +344,9 @@ impl PreparedCase {
 }
 
 //------------------------------------------------------------------------------
-/** 各異常系を完全に別の隔離コピーで準備し、既存 fixture や実 Java を再利用して変更しません。 */
+/**
+ * 各異常系を完全に別の隔離コピーで準備し、既存 fixture や実 Java を再利用して変更しません。
+ */
 //------------------------------------------------------------------------------
 fn prepared(label: &str) -> PreparedCase {
 	let (root, java, options) = case(21, label);
@@ -362,7 +386,9 @@ fn prepared(label: &str) -> PreparedCase {
 }
 
 //------------------------------------------------------------------------------
-/** 所有fixtureのdirectory DACLだけを設定します。製品には権限緩和の入口を追加しません。 */
+/**
+ * 所有fixtureのdirectory DACLだけを設定します。製品には権限緩和の入口を追加しません。
+ */
 //------------------------------------------------------------------------------
 fn fixture_directory_acl(path: &Path, deny_create: bool) {
 	assert!(
@@ -385,6 +411,7 @@ Set-Acl -LiteralPath $env:JTR_FIXTURE_DIRECTORY -AclObject $security
 				.expect("Unicode fixture")
 				.trim_start_matches("\\\\?\\"),
 		)
+		// 指定した拒否条件だけに directory 作成の deny ACE を加える
 		.env("JTR_FIXTURE_DENY", if deny_create { "1" } else { "0" })
 		.args(["-NoProfile", "-NonInteractive", "-Command", script])
 		.creation_flags(0x0800_0000)
@@ -398,11 +425,14 @@ Set-Acl -LiteralPath $env:JTR_FIXTURE_DIRECTORY -AclObject $security
 }
 
 //------------------------------------------------------------------------------
-/** Java内rootの広いACL・通常file・link・未知内容と作成権限不足/readonlyを、元を変えず拒否します。 */
+/**
+ * Java内rootの広いACL・通常file・link・未知内容と作成権限不足/readonlyを、元を変えず拒否します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "新規のJava内backup隔離fixtureが必要"]
 fn java_local_backup_refuses_unsafe_roots_and_write_denial() {
+	// 危険な保存先と実権限不足の各条件を、独立した Java コピーで検証する
 	for label in [
 		"wide",
 		"file",
@@ -414,6 +444,7 @@ fn java_local_backup_refuses_unsafe_roots_and_write_denial() {
 		let mut test = prepared(&format!("local-{label}"));
 		let options = TransactionOptions::for_java(&test.environment).expect("local options");
 		let root = options.backup_root();
+		// 各条件の所有 fixture だけに異常を作り、実 Java や他 case を変更しない
 		match label {
 			"wide" => fs::create_dir(root).expect("inherited broad ACL"),
 			"file" => fs::write(root, b"unknown root file").expect("ordinary file root"),
@@ -525,12 +556,14 @@ fn java_local_backup_refuses_unsafe_roots_and_write_denial() {
 			"{label}: {error:?}"
 		);
 		test.assert_original();
+		// 未知ファイルがある条件では、その証拠も消されず残ることを確認する
 		if label == "unknown" {
 			assert_eq!(
 				fs::read(root.join("foreign.txt")).expect("preserved"),
 				b"preserve unknown data"
 			);
 		}
+		// 作成拒否と readonly の条件は、実権限または元属性の拒否理由も確認する
 		if label == "denied-create" || label == "readonly" {
 			assert!(!root.exists());
 		}
@@ -543,7 +576,9 @@ fn java_local_backup_refuses_unsafe_roots_and_write_denial() {
 }
 
 //------------------------------------------------------------------------------
-/** 同じ設定の別Javaへの流用と移動したbackupの復元を拒否し、元の場所へ戻したfixtureだけ復元します。 */
+/**
+ * 同じ設定の別Javaへの流用と移動したbackupの復元を拒否し、元の場所へ戻したfixtureだけ復元します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "新規のJava内backup隔離fixtureが必要"]
@@ -621,18 +656,23 @@ fn java_local_backup_binds_environment_and_rejects_moved_records() {
 }
 
 //------------------------------------------------------------------------------
-/** Java内rootでも未完了準備は新規適用を止め、既知の部分適用は通常の復旧検証から完全復元します。 */
+/**
+ * Java内rootでも未完了準備は新規適用を止め、既知の部分適用は通常の復旧検証から完全復元します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "新規のJava内backup隔離fixtureが必要"]
 fn java_local_backup_preserves_incomplete_preparation_and_recovers_known_state() {
+	// manifest 前の準備失敗と既知の部分適用を、それぞれ新規 case で検証する
 	for preparation in [true, false] {
+		// 二つの未完了条件を case 名でも分け、証拠の保存先を混在させない
 		let test = prepared(if preparation {
 			"local-incomplete"
 		} else {
 			"local-recovery"
 		});
 		let options = TransactionOptions::for_java(&test.environment).expect("local options");
+		// 準備時の失敗と rollback 失敗を、対応する境界へだけ注入する
 		let injected = if preparation {
 			options.clone().with_failure(FailurePoint {
 				boundary: FailureBoundary::Backup,
@@ -666,6 +706,7 @@ fn java_local_backup_preserves_incomplete_preparation_and_recovers_known_state()
 			.inspection
 			.as_ref()
 			.expect("incomplete inspection");
+		// 未完了準備は新規適用拒否、既知の部分適用は明示復旧という契約を分けて確認する
 		if preparation {
 			assert_eq!(inspection.state, HistoryState::IncompletePreparation);
 			assert_eq!(
@@ -701,11 +742,14 @@ fn java_local_backup_preserves_incomplete_preparation_and_recovers_known_state()
 }
 
 //------------------------------------------------------------------------------
-/** backup/stage/journal/途中置換の失敗は元を維持または逆順で完全 rollback します。 */
+/**
+ * backup/stage/journal/途中置換の失敗は元を維持または逆順で完全 rollback します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "隔離 transaction fixtures が必要"]
 fn injected_boundaries_preserve_or_roll_back_every_store() {
+	// 準備から途中置換までの各境界を独立検証し、他対象の部分適用も検出する
 	for (boundary, item) in [
 		(FailureBoundary::Backup, Some(0)),
 		(FailureBoundary::Stage, Some(0)),
@@ -730,6 +774,7 @@ fn injected_boundaries_preserve_or_roll_back_every_store() {
 		.expect_err("injected failure");
 		assert_eq!(error.code, TransactionCode::InjectedFailure, "{error:?}");
 		test.assert_original();
+		// 元対象を変更する前と確定開始後で、期待する終了状態を分ける
 		if matches!(boundary, FailureBoundary::Backup | FailureBoundary::Stage) {
 			assert_eq!(error.state, TransactionState::Aborted);
 			assert_eq!(
@@ -752,7 +797,9 @@ fn injected_boundaries_preserve_or_roll_back_every_store() {
 }
 
 //------------------------------------------------------------------------------
-/** 元失敗と rollback 失敗を両方保持し、既知の部分状態を明示復旧で元へ戻します。 */
+/**
+ * 元失敗と rollback 失敗を両方保持し、既知の部分状態を明示復旧で元へ戻します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "隔離 transaction fixtures が必要"]
@@ -806,7 +853,9 @@ fn failed_rollback_retains_both_causes_and_supports_known_recovery() {
 }
 
 //------------------------------------------------------------------------------
-/** stale scan/cancel を変更前に拒否し、保持中のアプリ間 lock は同一 thread でも Busy にします。 */
+/**
+ * stale scan/cancel を変更前に拒否し、保持中のアプリ間 lock は同一 thread でも Busy にします。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "隔離 transaction fixtures が必要"]
@@ -848,6 +897,7 @@ fn refuses_stale_scan_cancel_and_reentrant_busy() {
 		&test.options,
 		&preparing_cancel,
 		|event| {
+			// stage 工程に到達したときだけ中断し、確定前の cancel 契約を再現する
 			if event.phase == TransactionPhase::Stage {
 				preparing_cancel.cancel();
 			}
@@ -866,6 +916,7 @@ fn refuses_stale_scan_cancel_and_reentrant_busy() {
 		&test.options,
 		&committing_cancel,
 		|event| {
+			// 保持中の lock へ一度だけ再入を試み、同一 thread でも busy になることを確認する
 			if !busy_checked && event.phase == TransactionPhase::Backup {
 				let busy = apply_transaction(
 					&test.environment,
@@ -880,6 +931,7 @@ fn refuses_stale_scan_cancel_and_reentrant_busy() {
 				assert_eq!(busy.code, TransactionCode::Busy);
 				busy_checked = true;
 			}
+			// 確定工程では中断を要求しても処理が安全に完了することを確認する
 			if event.phase == TransactionPhase::Commit {
 				assert!(!event.cancellable);
 				committing_cancel.cancel();
@@ -912,7 +964,9 @@ fn refuses_stale_scan_cancel_and_reentrant_busy() {
 }
 
 //------------------------------------------------------------------------------
-/** 復元の途中失敗も逆順で適用後へ戻し、その後の通常復元が成功することを確認します。 */
+/**
+ * 復元の途中失敗も逆順で適用後へ戻し、その後の通常復元が成功することを確認します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "隔離 transaction fixtures が必要"]
@@ -963,11 +1017,14 @@ fn restoration_failure_rolls_back_to_applied_and_can_be_retried() {
 }
 
 //------------------------------------------------------------------------------
-/** 不正 password・外部更新・Java 更新・backup 破損・不正 schema/path/hash/重複を拒否します。 */
+/**
+ * 不正 password・外部更新・Java 更新・backup 破損・不正 schema/path/hash/重複を拒否します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "隔離 transaction fixtures が必要"]
 fn restoration_rejects_untrusted_material_without_overwriting_targets() {
+	// 認証・外部更新・Java・backup・manifest の各不整合を別々の case で検証する
 	for scenario in ["password", "external", "java", "backup", "manifest"] {
 		let test = prepared(scenario);
 		let applied = apply_transaction(
@@ -982,12 +1039,14 @@ fn restoration_rejects_untrusted_material_without_overwriting_targets() {
 		.expect("apply");
 		let target = applied.stores.last().expect("target");
 		let wrong = StorePassword::new("bad-password".to_owned()).expect("wrong password");
+		// 誤 password の条件だけで秘密を差し替え、他の失敗原因と混在させない
 		let passwords = if scenario == "password" {
 			vec![&wrong; test.plan.stores().len()]
 		} else {
 			test.restore_passwords()
 		};
 		let mut expected = None;
+		// 指定条件の材料だけを破損し、元対象への不正な復元が起きないことを確かめる
 		match scenario {
 			"external" => {
 				fs::OpenOptions::new()
@@ -1016,8 +1075,10 @@ fn restoration_rejects_untrusted_material_without_overwriting_targets() {
 				let path = applied.backup_directory.join("manifest.json");
 				let original = fs::read(&path).expect("manifest");
 				let parsed: serde_json::Value = serde_json::from_slice(&original).expect("JSON");
+				// schema・パス・ハッシュ・重複等の改変を、一つずつ独立した manifest で拒否させる
 				for kind in 0..5 {
 					let mut malformed = parsed.clone();
+					// 今回の改変条件だけを反映し、拒否原因と残存状態を対応付ける
 					match kind {
 						0 => malformed["schema_version"] = serde_json::json!(999),
 						1 => {
@@ -1067,11 +1128,13 @@ fn restoration_rejects_untrusted_material_without_overwriting_targets() {
 			|_| {},
 		)
 		.expect_err("refusal");
+		// 専用分類を定めた条件は、その code も期待どおりに保持されることを確認する
 		if let Some(code) = expected {
 			assert_eq!(error.code, code, "{scenario}: {error:?}");
 		} else {
 			assert_eq!(error.code, TransactionCode::Keytool, "{error:?}");
 		}
+		// 拒否した後も全対象の適用後 byte が保全され、部分復元が起きないことを確認する
 		for (path, before) in applied.stores.iter().zip(before) {
 			assert_eq!(sha256_hex(&fs::read(path).expect("after refusal")), before);
 		}
@@ -1080,7 +1143,9 @@ fn restoration_rejects_untrusted_material_without_overwriting_targets() {
 }
 
 //------------------------------------------------------------------------------
-/** journal の末尾破断を成功扱いせず、元記録を残した新規分岐から既知状態を復元します。 */
+/**
+ * journal の末尾破断を成功扱いせず、元記録を残した新規分岐から既知状態を復元します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "隔離 transaction fixtures が必要"]
@@ -1141,7 +1206,9 @@ fn torn_journal_is_detected_and_recovered_without_rewriting_evidence() {
 }
 
 //------------------------------------------------------------------------------
-/** 正しい password が PEM の語句と一致しても RFC を壊さず、両形式の適用と復元が成功します。 */
+/**
+ * 正しい password が PEM の語句と一致しても RFC を壊さず、両形式の適用と復元が成功します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "隔離 transaction fixtures が必要"]
@@ -1149,6 +1216,7 @@ fn password_matching_pem_marker_does_not_corrupt_inventory() {
 	let (root, java, options) = case(21, "pem-password");
 	let cancellation = Cancellation::default();
 	let environment = select_java(&java, &cancellation).expect("Java");
+	// JKS と PKCS12 の両方で、PEM 境界と一致する秘密を試験する
 	for name in ["custom 日本語.jks", "custom 日本語.p12"] {
 		let path = root.join(name);
 		let path_text = path.to_str().expect("known Unicode fixture");
@@ -1170,7 +1238,9 @@ fn password_matching_pem_marker_does_not_corrupt_inventory() {
 			.env("FIXTURE_OLD", "changeit")
 			.env("FIXTURE_NEW", "CERTIFICATE")
 			.creation_flags(0x0800_0000);
+		// fixture の keytool にも本番と同じ基本環境だけを個別供給する
 		for key in ["SystemRoot", "WINDIR", "TEMP", "TMP"] {
+			// 存在する許可環境だけを継承し、親の Java 注入設定を持ち込まない
 			if let Some(value) = std::env::var_os(key) {
 				command.env(key, value);
 			}
@@ -1234,6 +1304,7 @@ fn password_matching_pem_marker_does_not_corrupt_inventory() {
 		|_| {},
 	)
 	.expect("restore");
+	// 適用・復元の全ストアを再照合し、解析用 payload が秘密除去で壊れないことを確認する
 	for store in group.stores() {
 		let original = store.snapshot().expect("snapshot");
 		assert_eq!(
@@ -1244,7 +1315,9 @@ fn password_matching_pem_marker_does_not_corrupt_inventory() {
 }
 
 //------------------------------------------------------------------------------
-/** 欠落を通常復元で上書きせず、開始記録と同 volume 元 recovery copy が揃う場合だけ復旧します。 */
+/**
+ * 欠落を通常復元で上書きせず、開始記録と同 volume 元 recovery copy が揃う場合だけ復旧します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "隔離 transaction fixtures が必要"]
@@ -1313,7 +1386,9 @@ fn missing_target_requires_pending_record_and_verified_recovery_copy() {
 }
 
 //------------------------------------------------------------------------------
-/** 監査 SACL を持つ新規 fixture は、内容を書かず UnsupportedMetadata で適用を拒否します。 */
+/**
+ * 監査 SACL を持つ新規 fixture は、内容を書かず UnsupportedMetadata で適用を拒否します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "SACL 設定特権と隔離 transaction fixtures が必要"]

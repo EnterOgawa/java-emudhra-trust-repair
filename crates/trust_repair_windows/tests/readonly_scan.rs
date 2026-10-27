@@ -3,7 +3,7 @@
  * - ファイル: readonly_scan.rs
  * - 概要: 隔離コピーの実 keytool で四つの LTS を読み取り診断します。
  * - バージョン: 01.00.00
- * - 作成日: 2026/10/26
+ * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
  *
@@ -20,7 +20,7 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/26  実データの読取りと元 hash 不変の試験を追加。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
  * ```
  *
  * 備考:
@@ -41,7 +41,9 @@ use trust_repair_windows::{
 };
 
 //------------------------------------------------------------------------------
-/** 明示された隔離 fixture root を返します。未設定または workspace 外なら試験を失敗させます。 */
+/**
+ * 明示された隔離 fixture root を返します。未設定または workspace 外なら試験を失敗させます。
+ */
 //------------------------------------------------------------------------------
 fn fixtures() -> PathBuf {
 	let root = PathBuf::from(
@@ -58,7 +60,9 @@ fn fixtures() -> PathBuf {
 }
 
 //------------------------------------------------------------------------------
-/** 非秘密の固定試験用 password を、製品と同じ所有型へ渡します。 */
+/**
+ * 非秘密の固定試験用 password を、製品と同じ所有型へ渡します。
+ */
 //------------------------------------------------------------------------------
 fn password() -> StorePassword {
 	StorePassword::new("changeit".to_owned()).expect("fixture password")
@@ -136,6 +140,7 @@ fn scans_four_lts_both_formats_without_writing_any_store() {
 			let snapshot = store.snapshot().expect("snapshot");
 			assert!(!snapshot.security_descriptor().is_empty());
 			snapshot.revalidate(32 * 1024 * 1024).expect("再照合");
+			// 明示 custom の範囲では日本語パスと重複指定も保持されたことを確認する
 			if index >= 2 {
 				assert_eq!(store.report().targets().len(), 5);
 				assert_eq!(
@@ -171,7 +176,9 @@ fn scans_four_lts_both_formats_without_writing_any_store() {
 }
 
 //------------------------------------------------------------------------------
-/** password 不正・破損・同名別 DER・秘密鍵/対称鍵の一つで、他の成功の計画も止めます。 */
+/**
+ * password 不正・破損・同名別 DER・秘密鍵/対称鍵の一つで、他の成功の計画も止めます。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "隔離 fixtures が必要"]
@@ -196,6 +203,7 @@ fn rejects_bad_password_corruption_collision_and_key_material() {
 	] {
 		let path = root.join(name);
 		let before = sha256_hex(&fs::read(&path).expect("before"));
+		// 誤 password の条件だけに非秘密の誤入力を使い、各失敗原因を分ける
 		let bad = if wrong_password {
 			StorePassword::new("wrong-password".to_owned()).expect("test password")
 		} else {
@@ -224,6 +232,7 @@ fn rejects_bad_password_corruption_collision_and_key_material() {
 			"{name}"
 		);
 		let failed = group.stores().last().expect("custom");
+		// 既知の抑止理由がある条件では、その型付き理由まで保持されることを確認する
 		if let Some(issue) = expected {
 			assert!(
 				failed.report().issues().contains(&issue),
@@ -234,6 +243,7 @@ fn rejects_bad_password_corruption_collision_and_key_material() {
 				failed.report().inventory().is_some(),
 				"鍵や同名衝突でも inventory を表示する"
 			);
+			// 秘密鍵と対称鍵で期待する inventory の構造を分け、どちらも変更不可と確認する
 			if name == "private.jks" {
 				assert!(!failed.warnings().is_empty());
 			}
@@ -246,7 +256,9 @@ fn rejects_bad_password_corruption_collision_and_key_material() {
 }
 
 //------------------------------------------------------------------------------
-/** 利用者の中断は結果に残り、child を起動せず群全体の計画を無効にします。 */
+/**
+ * 利用者の中断は結果に残り、child を起動せず群全体の計画を無効にします。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "隔離 fixtures が必要"]
@@ -278,7 +290,9 @@ fn cancelled_scan_cannot_create_a_plan() {
 }
 
 //------------------------------------------------------------------------------
-/** 祖先 junction と診断中の外部書換えを検出し、他ストアの部分計画も作りません。 */
+/**
+ * 祖先 junction と診断中の外部書換えを検出し、他ストアの部分計画も作りません。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "隔離 fixtures が必要"]
@@ -310,6 +324,7 @@ fn rejects_ancestor_junction_and_external_update_during_scan() {
 		&custom,
 		&cancellation,
 		|event| {
+			// 指定ストアの一覧取得中に一度だけ外部変更し、診断全体の再照合で検出させる
 			if !changed && event.phase == ScanPhase::ListInventory && event.input_index == Some(2) {
 				fs::write(&path, b"external update during scan").expect("external fixture update");
 				changed = true;
@@ -330,7 +345,9 @@ fn rejects_ancestor_junction_and_external_update_during_scan() {
 }
 
 //------------------------------------------------------------------------------
-/** 選択後に Java が変化した場合、keytool の工程を一度も開始せず全群を無効にします。 */
+/**
+ * 選択後に Java が変化した場合、keytool の工程を一度も開始せず全群を無効にします。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "隔離 fixtures が必要"]

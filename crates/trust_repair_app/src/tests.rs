@@ -2,26 +2,30 @@
 /*!
  * - ファイル: tests.rs
  * - 概要: GUI の言語境界、秘密の非保存、未完了優先とキーボード入力を検証します。
- * - バージョン: 01.03.01
- * - 作成日: 2026/10/26
+ * - バージョン: 01.00.00
+ * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
  *
- * ライセンス: SPDX-License-Identifier: Apache-2.0
- * Apache License, Version 2.0。全文はルートの LICENSE を参照してください。
+ * ライセンス:
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ * 本ファイルには Apache License, Version 2.0 が適用されます。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
  *
  * 更新履歴:
+ *
  * ```text
- * Ver.01.00.00  Shunji Ogawa  2026/10/26  GUI 固有の失敗/秘密/言語/keyboard 契約を追加。
- * Ver.01.01.00  Shunji Ogawa  2026/10/26  簡素化した確認破棄・未完了案内・秘密非保存へ更新。
- * Ver.01.02.00  Shunji Ogawa  2026/10/26  自動判定の保守的分類・世代拒否・非消費入力を検証。
- * Ver.01.03.00  Shunji Ogawa  2026/10/26  選択Javaの履歴だけを採用し、入力変更で保存先と履歴を分離。
- * Ver.01.03.01  Shunji Ogawa  2026/10/26  初回Empty直後のDone・終了を同期し、pollの結果採用と回収を検証。
+ * VerNo.        author        update      comment
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
  * ```
  *
- * 備考: ファイル・Java を変更しない試験です。native の実測は別の明示 QA で行います。
+ * 備考:
+ *
+ * ファイル・Java を変更しない試験です。native の実測は別の明示 QA で行います。
  */
 //------------------------------------------------------------------------------
 
@@ -31,7 +35,9 @@ use std::thread;
 use trust_repair_windows::{ItemState, TransactionInspection};
 
 //------------------------------------------------------------------------------
-/** ファイル操作を開始しない固定設定で GUI 状態を作ります。失敗なら試験を失敗させます。 */
+/**
+ * ファイル操作を開始しない固定設定で GUI 状態を作ります。失敗なら試験を失敗させます。
+ */
 //------------------------------------------------------------------------------
 fn app(language: Language) -> TrustRepairApp {
 	TrustRepairApp::new(
@@ -43,7 +49,9 @@ fn app(language: Language) -> TrustRepairApp {
 }
 
 //------------------------------------------------------------------------------
-/** ファイルを変更せず、pollが保持すべき検証済み結果と再起動要否を作ります。 */
+/**
+ * ファイルを変更せず、pollが保持すべき検証済み結果と再起動要否を作ります。
+ */
 //------------------------------------------------------------------------------
 fn poll_outcome(state: TransactionState, restart_required: bool) -> TransactionOutcome {
 	TransactionOutcome {
@@ -56,10 +64,21 @@ fn poll_outcome(state: TransactionState, restart_required: bool) -> TransactionO
 }
 
 //------------------------------------------------------------------------------
-/** 制御済みworkerが終了判定へ到達するまで待ちます。sleepを使わず、試験障害は5秒で失敗します。 */
+/**
+ * 制御済みworkerが終了判定へ到達するまで待ちます。sleepを使わず、試験障害は5秒で失敗します。
+ *
+ * # Arguments
+ *
+ * - `worker`: この試験が終了を制御する worker。
+ *
+ * # Panics
+ *
+ * 5 秒以内に thread が終了判定へ到達しなければ試験を失敗させます。
+ */
 //------------------------------------------------------------------------------
 fn await_worker_finished(worker: &Worker) {
 	let deadline = Instant::now() + Duration::from_secs(5);
+	// 終了判定まで譲り合って待ち、5 秒の上限で同期障害を検出する
 	while !worker.handle.is_finished() {
 		assert!(Instant::now() < deadline, "controlled worker must finish");
 		thread::yield_now();
@@ -70,6 +89,16 @@ fn await_worker_finished(worker: &Worker) {
 /**
  * pollの初回受信を必ずEmptyにし、その直後だけ通知送信・thread終了を許可します。
  * 実際のpollを呼ぶ試験専用で、panic指定時も所有threadはpollで回収します。
+ *
+ * # Arguments
+ *
+ * - `app`: 初回 drain 後の一回限りの同期点を設定する試験画面。
+ * - `events`: 同期点の受理後に送る順序付き通知。
+ * - `panics`: `true` は通知後に制御 thread を panic させます。
+ *
+ * # Notes
+ *
+ * UI 側の初回 Empty を確認するまで通知を保留し、実際の poll の競合窓を固定します。
  */
 //------------------------------------------------------------------------------
 fn finish_after_initial_drain(app: &mut TrustRepairApp, events: Vec<Event>, panics: bool) {
@@ -77,6 +106,7 @@ fn finish_after_initial_drain(app: &mut TrustRepairApp, events: Vec<Event>, pani
 	let (sender, receiver) = mpsc::channel();
 	let handle = thread::spawn(move || {
 		wait.recv().expect("poll releases controlled worker");
+		// 初回 Empty の確認後に全通知を指定順で送り、終了判定との競合を固定する
 		for event in events {
 			assert!(sender.send(event).is_ok(), "poll owns the receiver");
 		}
@@ -99,10 +129,13 @@ fn finish_after_initial_drain(app: &mut TrustRepairApp, events: Vec<Event>, pani
 }
 
 //------------------------------------------------------------------------------
-/** 初回Empty→Done送信→thread終了の順でも、検証済み状態・再起動要否を一度だけ採用します。 */
+/**
+ * 初回Empty→Done送信→thread終了の順でも、検証済み状態・再起動要否を一度だけ採用します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 fn poll_accepts_done_sent_between_initial_empty_and_finished_check() {
+	// 適用・復元・二重復元の全状態で、遅着 Done の結果と再起動要否を検証する
 	for (state, status, restart) in [
 		(TransactionState::Applied, CurrentStatus::Disabled, true),
 		(
@@ -144,14 +177,18 @@ fn poll_accepts_done_sent_between_initial_empty_and_finished_check() {
 }
 
 //------------------------------------------------------------------------------
-/** Done欠落・実panic・成功通知後の実panicは、古い結果を残さず予期しない終了へ分類します。 */
+/**
+ * Done欠落・実panic・成功通知後の実panicは、古い結果を残さず予期しない終了へ分類します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 fn poll_rejects_finished_worker_without_done_or_with_panic() {
+	// Done 欠落・実 panic・成功通知後の panic の組合せを、実際の poll で拒否させる
 	for (sends_done, panics) in [(false, false), (false, true), (true, true)] {
 		let mut app = app(Language::English);
 		app.outcome = Some(poll_outcome(TransactionState::Applied, true));
 		app.confirmation = Some(Confirmation::Deactivate);
+		// Done のある条件だけ通知を用意し、通知欠落の条件と区別する
 		let events = if sends_done {
 			vec![Event::Done(Ok(Completed::Transaction(poll_outcome(
 				TransactionState::Restored,
@@ -170,7 +207,9 @@ fn poll_rejects_finished_worker_without_done_or_with_panic() {
 }
 
 //------------------------------------------------------------------------------
-/** 遅着した失敗の分類を維持し、同じ競合窓でも古い自動確認世代だけは採用しません。 */
+/**
+ * 遅着した失敗の分類を維持し、同じ競合窓でも古い自動確認世代だけは採用しません。
+ */
 //------------------------------------------------------------------------------
 #[test]
 fn poll_preserves_late_failure_and_rejects_stale_automatic_generation() {
@@ -189,9 +228,11 @@ fn poll_preserves_late_failure_and_rejects_stale_automatic_generation() {
 	assert_eq!(app.message, "Cancelled. Nothing was changed.");
 	assert!(!app.error_details.contains("Success cannot be confirmed"));
 
+	// 同じ競合窓で、現在世代の採用と古い世代の拒否を両方検証する
 	for stale in [false, true] {
 		let mut app = self::app(Language::English);
 		app.input_generation = 2;
+		// 古い結果の条件だけ入力世代を進め、通知の到着順は同じに保つ
 		app.automatic_generation = Some(if stale { 1 } else { 2 });
 		app.current_status = CurrentStatus::TargetsRemain;
 		app.message = "current selection".to_owned();
@@ -206,6 +247,7 @@ fn poll_preserves_late_failure_and_rejects_stale_automatic_generation() {
 		assert!(
 			app.worker.is_none() && app.pending.is_none() && app.automatic_generation.is_none()
 		);
+		// 入力世代の一致に応じた期待状態を照合し、遅着失敗の混入を検出する
 		if stale {
 			assert!(!app.error && app.current_status == CurrentStatus::TargetsRemain);
 			assert_eq!(app.message, "current selection");
@@ -218,7 +260,9 @@ fn poll_preserves_late_failure_and_rejects_stale_automatic_generation() {
 }
 
 //------------------------------------------------------------------------------
-/** Done受信後も生存workerを保持し、最新工程・中断要求・close待機を終了回収まで維持します。 */
+/**
+ * Done受信後も生存workerを保持し、最新工程・中断要求・close待機を終了回収まで維持します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 fn poll_keeps_live_worker_and_waits_to_close_until_reaped() {
@@ -227,6 +271,7 @@ fn poll_keeps_live_worker_and_waits_to_close_until_reaped() {
 	let (sender, receiver) = mpsc::channel();
 	let (ready, started) = mpsc::channel();
 	let handle = thread::spawn(move || {
+		// 中断可能な準備と確定後の検証で、工程通知と close 待機の契約を確認する
 		for phase in [
 			trust_repair_windows::TransactionPhase::Prepare,
 			trust_repair_windows::TransactionPhase::Verify,
@@ -288,19 +333,24 @@ fn poll_keeps_live_worker_and_waits_to_close_until_reaped() {
 }
 
 //------------------------------------------------------------------------------
-/** 言語の主番号と地域差、未知値を検証します。日本語以外は英語を要求します。 */
+/**
+ * 言語の主番号と地域差、未知値を検証します。日本語以外は英語を要求します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 fn selects_display_language_by_primary_langid() {
 	assert!(Language::from_langid(0x0411) == Language::Japanese);
 	assert!(Language::from_langid(0x0811) == Language::Japanese);
+	// 未知値と日本語以外の地域を一通り確認し、英語 fallback を維持する
 	for id in [0, 0x0409, 0x0809, 0x0407, 0x0804] {
 		assert!(Language::from_langid(id) == Language::English);
 	}
 }
 
 //------------------------------------------------------------------------------
-/** 入力秘密を結果保存へ含めず、入力変更で確認・再入力を破棄する契約を検証します。 */
+/**
+ * 入力秘密を結果保存へ含めず、入力変更で確認・再入力を破棄する契約を検証します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 fn excludes_passwords_and_invalidates_confirmation() {
@@ -320,11 +370,14 @@ fn excludes_passwords_and_invalidates_confirmation() {
 }
 
 //------------------------------------------------------------------------------
-/** 群全体成功後のNoTargetsだけを無効化済みとし、失敗・警告をその状態へ変換しません。 */
+/**
+ * 群全体成功後のNoTargetsだけを無効化済みとし、失敗・警告をその状態へ変換しません。
+ */
 //------------------------------------------------------------------------------
 #[test]
 fn distinguishes_no_targets_from_blocked_or_failed() {
 	assert!(CurrentStatus::from_plan(&Err(PlanError::NoTargets)) == CurrentStatus::Disabled);
+	// 全群の各失敗理由を、対象ゼロの診断成功と混同しないことを確認する
 	for error in [
 		PlanError::EmptySelection,
 		PlanError::Blocked { report_index: 0 },
@@ -335,7 +388,9 @@ fn distinguishes_no_targets_from_blocked_or_failed() {
 }
 
 //------------------------------------------------------------------------------
-/** 古い入力世代の失敗は新しいfolderの表示を変更せず、空入力には自動jobを予約しません。 */
+/**
+ * 古い入力世代の失敗は新しいfolderの表示を変更せず、空入力には自動jobを予約しません。
+ */
 //------------------------------------------------------------------------------
 #[test]
 fn discards_old_generation_and_clears_empty_selection() {
@@ -354,7 +409,9 @@ fn discards_old_generation_and_clears_empty_selection() {
 }
 
 //------------------------------------------------------------------------------
-/** 自動確認のsnapshot後もcustom入力を保持し、続く無効化操作で同じ入力を一度だけ消費できます。 */
+/**
+ * 自動確認のsnapshot後もcustom入力を保持し、続く無効化操作で同じ入力を一度だけ消費できます。
+ */
 //------------------------------------------------------------------------------
 #[test]
 fn automatic_snapshot_does_not_consume_custom_password() {
@@ -377,11 +434,15 @@ fn automatic_snapshot_does_not_consume_custom_password() {
 }
 
 //------------------------------------------------------------------------------
-/** 読み取り/特権/保存の実権限不足は、日英の主画面と自動確認で管理者起動案内を維持します。 */
+/**
+ * 読み取り/特権/保存の実権限不足は、日英の主画面と自動確認で管理者起動案内を維持します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 fn displays_administrator_advice_without_confusing_unsupported_metadata() {
+	// 日本語と英語の双方で、実権限不足の案内を検証する
 	for language in [Language::Japanese, Language::English] {
+		// 三つの実権限 code を同じ分類へ保ち、内容非対応の分類と区別する
 		for code in [5, 1300, 1314] {
 			let mut app = app(language);
 			app.accept_auto_check(
@@ -412,7 +473,9 @@ fn displays_administrator_advice_without_confusing_unsupported_metadata() {
 }
 
 //------------------------------------------------------------------------------
-/** 別Javaを選択した時点で古い履歴/復元確認を捨て、表示・保存先も選択Java内へ切り替えます。 */
+/**
+ * 別Javaを選択した時点で古い履歴/復元確認を捨て、表示・保存先も選択Java内へ切り替えます。
+ */
 //------------------------------------------------------------------------------
 #[test]
 fn changes_backup_location_and_clears_history_with_selected_java() {
@@ -452,7 +515,9 @@ fn changes_backup_location_and_clears_history_with_selected_java() {
 }
 
 //------------------------------------------------------------------------------
-/** 未完了履歴を復旧入口へ優先し、worker 切断を成功や outcome にしないことを検証します。 */
+/**
+ * 未完了履歴を復旧入口へ優先し、worker 切断を成功や outcome にしないことを検証します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 fn prioritizes_incomplete_history_and_rejects_interrupted_success() {
@@ -503,7 +568,9 @@ fn prioritizes_incomplete_history_and_rejects_interrupted_success() {
 }
 
 //------------------------------------------------------------------------------
-/** 実際の egui widget に Tab/Space を渡し、マウスなしで標準値を明示選択できることを確認します。 */
+/**
+ * 実際の egui widget に Tab/Space を渡し、マウスなしで標準値を明示選択できることを確認します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 fn toggles_explicit_password_choice_with_keyboard() {
@@ -514,6 +581,7 @@ fn toggles_explicit_password_choice_with_keyboard() {
 		password.draw(ui, Language::English);
 	});
 	output.textures_delta.clear();
+	// 実 widget へ Tab・Tab・Space を順に送り、keyboard だけで標準値を切り替える
 	for key in [egui::Key::Tab, egui::Key::Tab, egui::Key::Space] {
 		let events = [true, false]
 			.into_iter()

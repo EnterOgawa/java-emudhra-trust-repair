@@ -2,8 +2,8 @@
 /*!
  * - ファイル: process.rs
  * - 概要: 秘密を子専用環境で渡し、上限・中断・終了回収を持つ直接起動を提供します。
- * - バージョン: 01.00.03
- * - 作成日: 2026/10/26
+ * - バージョン: 01.00.00
+ * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
  *
@@ -20,10 +20,7 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/26  子の環境隔離と二つの pipe の同時 drain を追加。
- * Ver.01.00.01  Shunji Ogawa  2026/10/26  検証した stage 専用 delete 引数を追加。
- * Ver.01.00.02  Shunji Ogawa  2026/10/26  RFC 解析 payload は変更せず、非公開の所有 buffer を消去。
- * Ver.01.00.03  Shunji Ogawa  2026/10/26  子終了の観測後に両 pipe を再検査し、最終出力を収集。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
  * ```
  *
  * 備考:
@@ -57,17 +54,33 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 pub const PROCESS_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// 所有する文字列を drop 時に消去する password です。複製と内容の Debug を提供しません。
-pub struct StorePassword(Zeroizing<String>);
+pub struct StorePassword(
+	/// drop 時に内容を消去する、パスワードの所有 buffer。
+	Zeroizing<String>,
+);
 
 impl StorePassword {
 	//------------------------------------------------------------------------------
 	/**
-	 * 入力の所有権を受け取ります。空/NUL/改行/4096 byte 超過では入力を消去して失敗します。
+	 * 入力の所有権を受け取り、終了時に消去する秘密として検証します。
 	 * GUI は元の入力 buffer も移動または別途消去し、失敗時の自動再試行は行いません。
+	 *
+	 * # Arguments
+	 *
+	 * - `input`: 消去責任ごと受け取るパスワード。
+	 *
+	 * # Returns
+	 *
+	 * 終了時に消去する秘密の所有値。
+	 *
+	 * # Errors
+	 *
+	 * 空、NUL、CR/LF、4096 byte 超過の場合は、受け取った入力を消去して失敗します。
 	 */
 	//------------------------------------------------------------------------------
 	pub fn new(input: String) -> Result<Self, ProcessError> {
 		let value = Zeroizing::new(input);
+		// 制御文字や過大・空の入力を子の環境へ渡さず、所有 buffer の消去へ戻す
 		if value.is_empty() || value.len() > 4096 || value.chars().any(char::is_control) {
 			return Err(ProcessError::InvalidPassword);
 		}
@@ -77,7 +90,17 @@ impl StorePassword {
 
 impl fmt::Debug for StorePassword {
 	//------------------------------------------------------------------------------
-	/** [`fmt::Debug`] に従い、秘密の内容も長さも表示しません。 */
+	/**
+	 * [`fmt::Debug`] に従い、秘密の内容も長さも表示しません。
+	 *
+	 * # Returns
+	 *
+	 * 出力先の書込みに成功すれば `Ok(())`。
+	 *
+	 * # Errors
+	 *
+	 * 出力先の `fmt::Error` を伝播します。途中までの出力は取り消しません。
+	 */
 	//------------------------------------------------------------------------------
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		formatter.write_str("StorePassword([REDACTED])")
@@ -86,18 +109,25 @@ impl fmt::Debug for StorePassword {
 
 /// UI と同期 worker が共有できる、一方向の中断要求です。
 #[derive(Debug, Clone, Default)]
-pub struct Cancellation(Arc<AtomicBool>);
+pub struct Cancellation(
+	/// 複製先の thread と共有する、一方向の中断要求。
+	Arc<AtomicBool>,
+);
 
 impl Cancellation {
 	//------------------------------------------------------------------------------
-	/** 中断を要求します。別スレッドから呼び出せます。解除は新しい値の生成で行います。 */
+	/**
+	 * 中断を要求します。別スレッドから呼び出せます。解除は新しい値の生成で行います。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn cancel(&self) {
 		self.0.store(true, Ordering::Release);
 	}
 
 	//------------------------------------------------------------------------------
-	/** 一度でも中断が要求されていれば `true` を返します。 */
+	/**
+	 * 一度でも中断が要求されていれば `true` を返します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn is_cancelled(&self) -> bool {
 		self.0.load(Ordering::Acquire)
@@ -140,7 +170,17 @@ pub enum ProcessError {
 
 impl fmt::Display for ProcessError {
 	//------------------------------------------------------------------------------
-	/** [`fmt::Display`] の診断用表現です。GUI は variant をローカライズします。 */
+	/**
+	 * [`fmt::Display`] の診断用表現です。GUI は variant をローカライズします。
+	 *
+	 * # Returns
+	 *
+	 * 出力先の書込みに成功すれば `Ok(())`。
+	 *
+	 * # Errors
+	 *
+	 * 出力先の `fmt::Error` を伝播します。途中までの出力は取り消しません。
+	 */
 	//------------------------------------------------------------------------------
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(formatter, "Java プロセスの失敗: {self:?}")
@@ -159,7 +199,9 @@ pub(crate) struct ProcessOutput {
 
 impl Drop for ProcessOutput {
 	//------------------------------------------------------------------------------
-	/** 解析に使った payload を終了時に消去します。外部へ全文を返しません。 */
+	/**
+	 * 解析に使った payload を終了時に消去します。外部へ全文を返しません。
+	 */
 	//------------------------------------------------------------------------------
 	fn drop(&mut self) {
 		self.stdout.zeroize();
@@ -175,14 +217,26 @@ struct OwnedChild {
 
 impl OwnedChild {
 	//------------------------------------------------------------------------------
-	/** エラー時に kill と wait を試行し、後始末の失敗でも最初の原因を保持します。 */
+	/**
+	 * エラー時に kill と wait を試行し、後始末の失敗でも最初の原因を保持します。
+	 *
+	 * # Arguments
+	 *
+	 * - `cause`: kill/wait より前に検出した主原因。
+	 *
+	 * # Returns
+	 *
+	 * 後始末を試みた後の主原因。kill/wait の失敗で元の原因を置換しません。
+	 */
 	//------------------------------------------------------------------------------
 	fn stop(&mut self, cause: ProcessError) -> ProcessError {
+		// 既に子の所有を解いた経路では、重ねて終了操作を試みない
 		let Some(child) = self.child.as_mut() else {
 			return cause;
 		};
 		let kill_error = child.kill().err();
 		let waited = child.wait();
+		// 終了待ちに成功した子だけを guard から外し、未回収なら drop の再試行対象に残す
 		if waited.is_ok() {
 			self.child = None;
 			// 既に終了していた子への kill 失敗は wait 成功なら回収失敗ではない
@@ -201,9 +255,12 @@ impl OwnedChild {
 
 impl Drop for OwnedChild {
 	//------------------------------------------------------------------------------
-	/** panic 等でも所有する子を残さず終了・回収します。通常経路は明示的に結果を返します。 */
+	/**
+	 * panic 等でも所有する子を残さず終了・回収します。通常経路は明示的に結果を返します。
+	 */
 	//------------------------------------------------------------------------------
 	fn drop(&mut self) {
+		// 所有中の子が残る場合だけ、例外経路でも終了と回収を試みる
 		if let Some(child) = self.child.as_mut() {
 			// Drop は失敗を返せない。通常のエラーは stop で返し、この最終防御だけは無視する
 			let _ = child.kill();
@@ -217,6 +274,26 @@ impl Drop for OwnedChild {
  * 読み取り専用 Java/keytool コマンドを直接起動し、両 pipe を交互に非 blocking drain します。
  * 引数は個別の OsString で渡し、親の環境を変更しません。callback や非同期 runtime は不要です。
  * エラー出力本文は返さず、成功時も password と一致する部分を除去します。
+ *
+ * # Arguments
+ *
+ * - `executable`: 直接起動する検証済み executable のパス。
+ * - `arguments`: shell 展開を行わず個別に渡す引数。
+ * - `password`: 子の環境へ一時供給する秘密。`None` は秘密を供給しない操作。
+ * - `cancellation`: 子の終了回収まで監視する中断要求。
+ *
+ * # Returns
+ *
+ * 成功終了した子の UTF-8 出力。表示用途では秘密と一致する部分を除去します。
+ *
+ * # Errors
+ *
+ * 起動・pipe・入出力・終了待ち、異常終了、UTF-8、時間・各 stream の容量上限、
+ * または中断で失敗します。成功前の出力は返さず、所有する子を終了・回収して戻ります。
+ *
+ * # Notes
+ *
+ * 実行は同期です。UI thread から呼ばず、呼出し元が完了まで待ちます。
  */
 //------------------------------------------------------------------------------
 pub(crate) fn run_readonly(
@@ -240,6 +317,22 @@ pub(crate) fn run_readonly(
  * 厳密 RFC 解析用の成功 payload を変更せず返します。password と PEM 境界が同じでも壊しません。
  * 出力は非公開の ProcessOutput だけが所有し、Debug/ログ禁止・drop 時消去を維持します。
  * 失敗出力の全文は一切返しません。表示用の通常呼出しは run_readonly の除去を維持します。
+ *
+ * # Arguments
+ *
+ * - `executable`: 直接起動する検証済み executable のパス。
+ * - `arguments`: shell 展開を行わず個別に渡す引数。
+ * - `password`: keytool へ一時供給する秘密。参照を出力へ保持しません。
+ * - `cancellation`: 子の終了回収まで監視する中断要求。
+ *
+ * # Returns
+ *
+ * 厳密な解析用の、秘密除去を行わない成功出力。所有する payload は drop 時に消去します。
+ *
+ * # Errors
+ *
+ * 起動・pipe・入出力・終了待ち、異常終了、UTF-8、時間・各 stream の容量上限、
+ * または中断で失敗します。成功前の出力は返さず、所有する子を終了・回収して戻ります。
  */
 //------------------------------------------------------------------------------
 pub(crate) fn run_inventory(
@@ -260,7 +353,27 @@ pub(crate) fn run_inventory(
 }
 
 //------------------------------------------------------------------------------
-/** 上限の短い異常系試験も同じ実行経路で検証します。通常 API は固定上限を使用します。 */
+/**
+ * 上限の短い異常系試験も同じ実行経路で検証します。通常 API は固定上限を使用します。
+ *
+ * # Arguments
+ *
+ * - `executable`: 直接起動する検証済み executable のパス。
+ * - `arguments`: shell 展開を行わず個別に渡す引数。
+ * - `password`: 子の環境へ一時供給する秘密。`None` は秘密を供給しない操作。
+ * - `cancellation`: 子の終了回収まで監視する中断要求。
+ * - `timeout`: 起動後の収集開始から測る制限時間。
+ * - `limit`: stdout と stderr それぞれに許可する最大 byte 数。
+ *
+ * # Returns
+ *
+ * 表示用の秘密除去を行った成功出力。
+ *
+ * # Errors
+ *
+ * 起動・pipe・入出力・終了待ち、異常終了、UTF-8、時間・各 stream の容量上限、
+ * または中断で失敗します。成功前の出力は返さず、所有する子を終了・回収して戻ります。
+ */
 //------------------------------------------------------------------------------
 fn run_with_limits(
 	executable: &Path,
@@ -282,7 +395,28 @@ fn run_with_limits(
 }
 
 //------------------------------------------------------------------------------
-/** 同じ子の所有/回収契約で、表示用除去と解析用無改変を明示的に分けます。 */
+/**
+ * 同じ子の所有/回収契約で、表示用除去と解析用無改変を明示的に分けます。
+ *
+ * # Arguments
+ *
+ * - `executable`: 直接起動する検証済み executable のパス。
+ * - `arguments`: shell 展開を行わず個別に渡す引数。
+ * - `password`: 子の環境へ一時供給する秘密。`None` は秘密を供給しない操作。
+ * - `cancellation`: 子の終了回収まで監視する中断要求。
+ * - `timeout`: 収集を継続できる制限時間。
+ * - `limit`: 各出力 stream の最大 byte 数。
+ * - `redact`: `true` は表示用の秘密除去、`false` は解析用の無改変出力。
+ *
+ * # Returns
+ *
+ * 検証に合格した成功出力。引数と秘密への参照は保持しません。
+ *
+ * # Errors
+ *
+ * 起動・pipe・入出力・終了待ち、異常終了、UTF-8、時間・各 stream の容量上限、
+ * または中断で失敗します。成功前の出力は返さず、所有する子を終了・回収して戻ります。
+ */
 //------------------------------------------------------------------------------
 fn run_with_limits_output(
 	executable: &Path,
@@ -293,6 +427,7 @@ fn run_with_limits_output(
 	limit: usize,
 	redact: bool,
 ) -> Result<ProcessOutput, ProcessError> {
+	// 開始前の中断要求で不要な子を生成しない
 	if cancellation.is_cancelled() {
 		return Err(ProcessError::Cancelled);
 	}
@@ -306,13 +441,16 @@ fn run_with_limits_output(
 		.creation_flags(CREATE_NO_WINDOW);
 	// Java の起動に必要な Windows の基本環境だけを許可し、Java 注入変数や PATH は継承しない
 	for name in ["SystemRoot", "WINDIR", "TEMP", "TMP"] {
+		// 許可した基本環境だけを、存在する場合に個別継承する
 		if let Some(value) = std::env::var_os(name) {
 			command.env(name, value);
 		}
 	}
+	// 実行ファイルの親を作業先にし、親アプリの作業先へ依存させない
 	if let Some(directory) = executable.parent() {
 		command.current_dir(directory);
 	}
+	// 認証が必要な操作だけに一時の子環境を用意する
 	if let Some(secret) = password {
 		command.env(PASSWORD_ENV, secret.0.as_str());
 	}
@@ -329,6 +467,7 @@ fn run_with_limits_output(
 		timeout,
 		limit,
 	);
+	// 収集失敗は所有 guard による終了回収を通し、成功時だけ所有を解除する
 	let (stdout, stderr, status) = match result {
 		Ok(value) => {
 			owned.child = None;
@@ -338,6 +477,7 @@ fn run_with_limits_output(
 	};
 	let stdout = Zeroizing::new(stdout);
 	let stderr = Zeroizing::new(stderr);
+	// 子の異常終了を、途中の出力があるだけで成功にしない
 	if !status.success() {
 		return Err(ProcessError::Unsuccessful {
 			exit_code: status.code(),
@@ -347,6 +487,7 @@ fn run_with_limits_output(
 	let stderr_text = std::str::from_utf8(&stderr).map_err(|_| ProcessError::InvalidUtf8)?;
 	// 起動した実体が秘密を出力しても公開しない。置換前の buffer も drop 時に消去する
 	let clean = |value: &str| {
+		// 解析用途では payload を保持し、表示用途でだけ秘密の一致部分を除去する
 		if !redact {
 			return value.to_owned();
 		}
@@ -367,6 +508,22 @@ fn run_with_limits_output(
  * PeekNamedPipe で利用可能な byte だけ読むため、reader thread を detach しません。
  * 終了観測より前の empty 判定は使わず、観測後に両 pipe が空になるまで交互に収集します。
  * 継承先が writer を保持していても EOF を待たず、開始時からの時間・容量上限を維持します。
+ *
+ * # Arguments
+ *
+ * - `child`: 呼出し元の guard が所有する実行中の子。両出力 pipe を借用します。
+ * - `cancellation`: 収集中に検査する中断要求。
+ * - `timeout`: 本関数の収集開始から測る最大時間。
+ * - `limit`: stdout と stderr それぞれの最大 byte 数。
+ *
+ * # Returns
+ *
+ * 子の終了を観測した後に両 pipe を再検査して集めた byte 列と終了状態。
+ *
+ * # Errors
+ *
+ * 中断、制限時間・容量の超過、pipe の取得・読込み・終了待ちの失敗。
+ * 子の kill/wait は、この結果を受け取る所有 guard が行います。
  */
 //------------------------------------------------------------------------------
 fn collect(
@@ -389,9 +546,11 @@ fn collect(
 	let mut exit_status = None;
 	// 子終了と両 pipe の残データ消費まで繰り返す。子が pipe を閉じなくても時間上限で終了する
 	loop {
+		// 中断要求を各周で検査し、実行中の子は呼出し側の guard で回収する
 		if cancellation.is_cancelled() {
 			return Err(ProcessError::Cancelled);
 		}
+		// pipe 継承先が残る場合も、収集開始からの時間上限で打ち切る
 		if started.elapsed() >= timeout {
 			return Err(ProcessError::Timeout);
 		}
@@ -425,7 +584,24 @@ fn collect(
 }
 
 //------------------------------------------------------------------------------
-/** 利用可能な pipe byte を一塊だけ読みます。上限超過または OS の失敗を伝播します。 */
+/**
+ * 利用可能な pipe byte を一塊だけ読みます。上限超過または OS の失敗を伝播します。
+ *
+ * # Arguments
+ *
+ * - `pipe`: 現在利用可能な byte 数を問い合わせる所有中の pipe。
+ * - `output`: 既に読んだ byte の末尾へ追加する buffer。
+ * - `limit`: 追加後に許可する合計 byte 数。
+ *
+ * # Returns
+ *
+ * 今回追加した byte 数。現在読める byte がない、または pipe が閉じていれば 0。
+ *
+ * # Errors
+ *
+ * pipe の問い合わせ・読込み失敗、または容量上限超過。
+ * 既に追加済みの byte は巻き戻しません。
+ */
 //------------------------------------------------------------------------------
 #[allow(unsafe_code)]
 fn drain_available(
@@ -445,14 +621,19 @@ fn drain_available(
 			std::ptr::null_mut(),
 		)
 	};
+	// pipe 問い合わせの失敗を確認し、終端と実際の OS 失敗を区別する
 	if success == 0 {
 		let error = io::Error::last_os_error();
-		if matches!(error.raw_os_error(), Some(code) if code == ERROR_BROKEN_PIPE as i32 || code == ERROR_NO_DATA as i32)
-		{
+		// 既知の pipe 終端は空として扱い、他の OS 失敗は上位へ返す
+		if matches!(
+			error.raw_os_error(),
+			Some(code) if code == ERROR_BROKEN_PIPE as i32 || code == ERROR_NO_DATA as i32
+		) {
 			return Ok(0);
 		}
 		return Err(io_error("peek_pipe", &error));
 	}
+	// 現在読める byte がなければ待機せず、もう一方の pipe と子終了を検査する
 	if available == 0 {
 		return Ok(0);
 	}
@@ -461,6 +642,7 @@ fn drain_available(
 	let read = pipe
 		.read(&mut buffer[..length])
 		.map_err(|error| io_error("read_pipe", &error))?;
+	// 追加前に残容量を検査し、上限超過の部分出力を成功へ渡さない
 	if read > limit.saturating_sub(output.len()) {
 		return Err(ProcessError::OutputLimit);
 	}
@@ -469,7 +651,9 @@ fn drain_available(
 }
 
 //------------------------------------------------------------------------------
-/** 外部メッセージを持ち込まず、固定工程と OS コードだけを保持します。 */
+/**
+ * 外部メッセージを持ち込まず、固定工程と OS コードだけを保持します。
+ */
 //------------------------------------------------------------------------------
 fn io_error(operation: &'static str, error: &io::Error) -> ProcessError {
 	ProcessError::Io {
@@ -479,7 +663,9 @@ fn io_error(operation: &'static str, error: &io::Error) -> ProcessError {
 }
 
 //------------------------------------------------------------------------------
-/** 固定の英語/UTF-8 JVM 設定を個別引数として返します。 */
+/**
+ * 固定の英語/UTF-8 JVM 設定を個別引数として返します。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn english_jvm_arguments() -> Vec<OsString> {
 	[
@@ -495,7 +681,9 @@ pub(crate) fn english_jvm_arguments() -> Vec<OsString> {
 }
 
 //------------------------------------------------------------------------------
-/** 診断専用の list 引数を作ります。秘密は名前のみを渡し、値は一切含めません。 */
+/**
+ * 診断専用の list 引数を作ります。秘密は名前のみを渡し、値は一切含めません。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn list_arguments(store: &Path) -> Vec<OsString> {
 	let mut args = english_jvm_arguments();
@@ -516,7 +704,18 @@ pub(crate) fn list_arguments(store: &Path) -> Vec<OsString> {
 }
 
 //------------------------------------------------------------------------------
-/** stage 専用の削除引数を作ります。呼出し側が元 path と異なる新規 stage を検証します。 */
+/**
+ * stage 専用の削除引数を作ります。呼出し側が元 path と異なる新規 stage を検証します。
+ *
+ * # Arguments
+ *
+ * - `store`: 呼出し側が検証した、元ファイルと異なる新規 stage。
+ * - `alias`: inventory から取得した削除対象の別名。
+ *
+ * # Returns
+ *
+ * 指定 stage の一別名を削除する個別引数。パスワード値を含みません。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn delete_arguments(store: &Path, alias: &str) -> Vec<OsString> {
 	let mut args = english_jvm_arguments();
@@ -535,11 +734,17 @@ pub(crate) fn delete_arguments(store: &Path, alias: &str) -> Vec<OsString> {
 }
 
 //------------------------------------------------------------------------------
-/** 検査済み local DOS path の verbatim prefix だけを UTF-16 のまま除きます。 */
+/**
+ * 検査済み local DOS path の verbatim prefix だけを UTF-16 のまま除きます。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn java_path_argument(path: &Path) -> OsString {
-	if matches!(path.components().next(), Some(std::path::Component::Prefix(prefix)) if matches!(prefix.kind(), std::path::Prefix::VerbatimDisk(_)))
-	{
+	// Java が扱える DOS path に限って verbatim prefix を外し、他の prefix は保持する
+	if matches!(
+		path.components().next(),
+		Some(std::path::Component::Prefix(prefix))
+			if matches!(prefix.kind(), std::path::Prefix::VerbatimDisk(_))
+	) {
 		let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
 		OsString::from_wide(&wide[4..])
 	} else {
@@ -585,7 +790,19 @@ mod tests {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 両 pipe が実際に空だった一回だけ、同じスレッドが登録した同期処理を実行します。 */
+	/**
+	 * 両 pipe が実際に空だった一回だけ、同じスレッドが登録した同期処理を実行します。
+	 *
+	 * # Arguments
+	 *
+	 * - `child`: 同期処理へ貸し出す、この試験が所有する子。
+	 * - `out_count`: 直前に stdout から読んだ byte 数。
+	 * - `err_count`: 直前に stderr から読んだ byte 数。
+	 *
+	 * # Notes
+	 *
+	 * thread-local の処理を取り出してから実行し、同じ同期点の再入を避けます。
+	 */
 	//------------------------------------------------------------------------------
 	pub(super) fn after_empty_drain(child: &mut Child, out_count: usize, err_count: usize) {
 		// 出力の収集中は子を待機させ、競合する二つの empty 判定の直後に限定する
@@ -599,7 +816,9 @@ mod tests {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 同じ test executable の一つの無視試験だけを子として起動する引数です。 */
+	/**
+	 * 同じ test executable の一つの無視試験だけを子として起動する引数です。
+	 */
 	//------------------------------------------------------------------------------
 	fn fixture_arguments() -> Vec<OsString> {
 		[
@@ -634,14 +853,17 @@ mod tests {
 			assert!(std::env::var_os(name).is_none(), "外部環境を継承しました");
 		}
 		let mode = std::env::var(PASSWORD_ENV).expect("fixture mode");
+		// 親が指定した待機 mode だけで長時間の子を再現する
 		if mode.starts_with("sleep|") {
 			let path = mode.strip_prefix("sleep|").expect("prefix");
 			std::fs::write(path, std::process::id().to_string()).expect("PID marker");
 			std::thread::sleep(Duration::from_secs(30));
+		// 両 pipe の容量を超える出力を作り、交互収集の deadlock と上限を検証する
 		} else if mode == "flood" {
 			let buffer = vec![b'x'; 2 * 1024 * 1024];
 			std::io::stdout().write_all(&buffer).expect("stdout");
 			std::io::stderr().write_all(&buffer).expect("stderr");
+		// 親の同期合図後に両末尾を書き、終了観測前の最終書込みを固定する
 		} else if mode == "tail" {
 			// 親の両 pipe の empty 検査後だけ書込み、libtest の末尾を加えず実終了する
 			let mut release = [0];
@@ -656,11 +878,15 @@ mod tests {
 				.expect("final stderr");
 			std::io::stderr().flush().expect("flush stderr");
 			std::process::exit(23);
+		// 指定 mode ごとに不正な UTF-8 を stdout または stderr へ作り、両方の厳密検査を確認する
 		} else if mode == "invalid-utf8" {
 			std::io::stdout().write_all(&[0xff]).expect("stdout");
-		} else if mode == "invalid-stderr-utf8" {
+		}
+		// stderr だけが不正な UTF-8 の場合も、stdout が正常だからと成功にしないことを確認する
+		else if mode == "invalid-stderr-utf8" {
 			// 正常な stdout があっても stderr の不正 byte を成功にしない
 			std::io::stderr().write_all(&[0xff]).expect("stderr");
+		// 明示した異常終了 mode だけに失敗コードを返す
 		} else if mode == "fail" {
 			std::process::exit(19);
 		} else {
@@ -674,6 +900,18 @@ mod tests {
 	 * 実子の最終書込みと終了を、両 pipe の empty と次の try_wait の間へ固定します。
 	 * 各 payload は pipe 容量未満のため、同期点で wait しても pipe 飽和を起こしません。
 	 * エラー時も本番と同じ所有 guard で kill/wait し、戻る前に実子の終了を照合します。
+	 *
+	 * # Arguments
+	 *
+	 * - `limit`: 本番の collect に渡す各 pipe の容量上限（byte）。
+	 *
+	 * # Returns
+	 *
+	 * 所有する子の終了を確認した、両 stream の収集結果と終了状態。
+	 *
+	 * # Errors
+	 *
+	 * 本番 collect の制限・I/O エラーを返します。fixture の準備・同期・回収確認は試験の失敗にします。
 	 */
 	//------------------------------------------------------------------------------
 	fn collect_tail_fixture(limit: usize) -> Result<(Vec<u8>, Vec<u8>, ExitStatus), ProcessError> {
@@ -727,7 +965,9 @@ mod tests {
 	}
 
 	//------------------------------------------------------------------------------
-	/** empty→実子の両末尾書込み→終了→try_wait の順序でも、全 byte と終了コードを保持します。 */
+	/**
+	 * empty→実子の両末尾書込み→終了→try_wait の順序でも、全 byte と終了コードを保持します。
+	 */
 	//------------------------------------------------------------------------------
 	#[test]
 	fn collects_final_output_written_before_exit_observation() {
@@ -742,7 +982,9 @@ mod tests {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 子終了後に初めて見える byte にも上限を適用し、部分出力を成功として返しません。 */
+	/**
+	 * 子終了後に初めて見える byte にも上限を適用し、部分出力を成功として返しません。
+	 */
 	//------------------------------------------------------------------------------
 	#[test]
 	fn enforces_limit_on_output_written_before_exit_observation() {
@@ -751,7 +993,9 @@ mod tests {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 両 pipe の合計が pipe 容量を超えても deadlock せず、個別上限が働くことを確認します。 */
+	/**
+	 * 両 pipe の合計が pipe 容量を超えても deadlock せず、個別上限が働くことを確認します。
+	 */
 	//------------------------------------------------------------------------------
 	#[test]
 	fn drains_both_pipes_and_enforces_per_stream_limit() {
@@ -780,7 +1024,9 @@ mod tests {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 表示用の秘密除去と解析用の無改変を守り、異常終了と両 stream の UTF8 違反を拒否します。 */
+	/**
+	 * 表示用の秘密除去と解析用の無改変を守り、異常終了と両 stream の UTF8 違反を拒否します。
+	 */
 	//------------------------------------------------------------------------------
 	#[test]
 	fn redacts_secrets_and_rejects_exit_and_encoding_failures() {
@@ -841,7 +1087,9 @@ mod tests {
 	}
 
 	//------------------------------------------------------------------------------
-	/** timeout/cancel は待機中の所有する子だけを終了し、戻った時点で実際に生存していません。 */
+	/**
+	 * timeout/cancel は待機中の所有する子だけを終了し、戻った時点で実際に生存していません。
+	 */
 	//------------------------------------------------------------------------------
 	#[test]
 	fn timeout_and_cancel_kill_and_reap_owned_child() {
@@ -855,6 +1103,7 @@ mod tests {
 			let password = StorePassword::new(format!("sleep|{}", marker.display())).expect("mode");
 			let cancellation = Cancellation::default();
 			let request = cancellation.clone();
+			// 中断と timeout の二経路で、要求を与える方法と期待する終了理由を分ける
 			let thread = if cancelled {
 				Some(std::thread::spawn(move || {
 					std::thread::sleep(Duration::from_millis(250));
@@ -869,6 +1118,7 @@ mod tests {
 				&fixture_arguments(),
 				Some(&password),
 				&cancellation,
+				// 中断試験では timeout に余裕を持たせ、時間上限の試験とは終了原因を分ける
 				if cancelled {
 					Duration::from_secs(5)
 				} else {
@@ -876,13 +1126,19 @@ mod tests {
 				},
 				1024 * 1024,
 			);
+			// 生成した中断 thread の終了を確認してから、子の終了状態を照合する
 			if let Some(thread) = thread {
 				thread.join().expect("cancel thread");
 			}
 			assert!(started.elapsed() < Duration::from_secs(3));
-			assert!(
-				matches!(result, Err(error) if error == if cancelled { ProcessError::Cancelled } else { ProcessError::Timeout })
-			);
+			assert!(matches!(
+				result,
+				Err(error) if error == if cancelled {
+					ProcessError::Cancelled
+				} else {
+					ProcessError::Timeout
+				}
+			));
 			let pid: u32 = std::fs::read_to_string(marker)
 				.expect("子が起動した証拠")
 				.parse()
@@ -892,7 +1148,17 @@ mod tests {
 	}
 
 	//------------------------------------------------------------------------------
-	/** PID が終了済みか検査します。既に OS が削除した PID も終了済みとして扱います。 */
+	/**
+	 * PID が終了済みか検査します。既に OS が削除した PID も終了済みとして扱います。
+	 *
+	 * # Arguments
+	 *
+	 * - `pid`: この試験が起動した子の process ID。
+	 *
+	 * # Returns
+	 *
+	 * ハンドルを取得でき、終了コードが `STILL_ACTIVE` の場合だけ `true`。
+	 */
 	//------------------------------------------------------------------------------
 	#[allow(unsafe_code)]
 	fn is_running(pid: u32) -> bool {
@@ -902,6 +1168,7 @@ mod tests {
 		};
 		// SAFETY: query 権限だけで子 PID を開き、得た handle はこの関数内で必ず閉じる
 		let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+		// 既に取得できない PID は終了済みとし、他 process の操作へ進めない
 		if handle.is_null() {
 			return false;
 		}

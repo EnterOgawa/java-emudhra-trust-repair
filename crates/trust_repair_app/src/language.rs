@@ -2,26 +2,30 @@
 /*!
  * - ファイル: language.rs
  * - 概要: 日英の画面文言と backend の型付き判定を一か所で翻訳します。
- * - バージョン: 01.03.01
- * - 作成日: 2026/10/26
+ * - バージョン: 01.00.00
+ * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
  *
- * ライセンス: SPDX-License-Identifier: Apache-2.0
- * Apache License, Version 2.0。全文はルートの LICENSE を参照してください。
+ * ライセンス:
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ * 本ファイルには Apache License, Version 2.0 が適用されます。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
  *
  * 更新履歴:
+ *
  * ```text
- * Ver.01.00.00  Shunji Ogawa  2026/10/26  OS 言語選択と全 backend 判定の翻訳を追加。
- * Ver.01.01.00  Shunji Ogawa  2026/10/26  通常操作向けの短い工程表示を追加。
- * Ver.01.02.00  Shunji Ogawa  2026/10/26  確認範囲を限定する自動状態表示を追加。
- * Ver.01.03.00  Shunji Ogawa  2026/10/26  移動・コピーされたJava内backupの明示拒否理由を追加。
- * Ver.01.03.01  Shunji Ogawa  2026/10/26  状態確認の参照先を処理結果の名称へ統一。
+ * VerNo.        author        update      comment
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
  * ```
  *
- * 備考: Display や外部自由文から分岐しません。実名・path・alias・hash は値のままです。
+ * 備考:
+ *
+ * Display や外部自由文から分岐しません。実名・path・alias・hash は値のままです。
  */
 //------------------------------------------------------------------------------
 
@@ -42,7 +46,9 @@ pub enum Language {
 
 impl Language {
 	//------------------------------------------------------------------------------
-	/** 実権限不足のとき主画面にも表示する、手動での管理者起動案内です。 */
+	/**
+	 * 実権限不足のとき主画面にも表示する、手動での管理者起動案内です。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn administrator_required(self) -> &'static str {
 		self.text(
@@ -50,10 +56,14 @@ impl Language {
 			"Insufficient permissions. Close this app, then right-click it and choose \"Run as administrator\" to start it again.",
 		)
 	}
+
 	//------------------------------------------------------------------------------
-	/** 確認範囲だけの現状を日英化します。判定失敗を無効化済みと表示しません。 */
+	/**
+	 * 確認範囲だけの現状を日英化します。判定失敗を無効化済みと表示しません。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn current_status(self, value: crate::CurrentStatus, selected: bool) -> &'static str {
+		// 選択範囲の状態だけを文言へ対応させ、未選択と判定不能も区別する
 		match value {
 			crate::CurrentStatus::Unknown if !selected => {
 				self.text("フォルダ未選択", "No folder selected")
@@ -77,8 +87,11 @@ impl Language {
 			),
 		}
 	}
+
 	//------------------------------------------------------------------------------
-	/** 診断の専門工程を、通常操作で必要な短い案内へ変換します。 */
+	/**
+	 * 診断の専門工程を、通常操作で必要な短い案内へ変換します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn simple_scan_phase(self, _value: ScanPhase) -> &'static str {
 		self.text(
@@ -86,10 +99,14 @@ impl Language {
 			"Checking for matching certificates…",
 		)
 	}
+
 	//------------------------------------------------------------------------------
-	/** backend の工程から、通常操作向けの進捗を選びます。詳細は元の型を維持します。 */
+	/**
+	 * backend の工程から、通常操作向けの進捗を選びます。詳細は元の型を維持します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn simple_phase(self, value: TransactionPhase) -> &'static str {
+		// 実際の transaction 工程を、通常操作で必要な短い進捗へ対応させる
 		match value {
 			TransactionPhase::Backup => self.text(
 				"元に戻せるよう保存しています…",
@@ -114,29 +131,50 @@ impl Language {
 			_ => self.text("変更を準備しています…", "Preparing the changes…"),
 		}
 	}
+
 	//------------------------------------------------------------------------------
-	/** LANGID の主言語が日本語なら日本語、それ以外は英語を返します。OS を変更しません。 */
+	/**
+	 * LANGID の主言語が日本語なら日本語、それ以外は英語を返します。OS を変更しません。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn from_langid(id: u16) -> Self {
+		// 地域差を除いた主言語で日本語を選び、未知の言語も英語へ戻す
 		if id & 0x03ff == 0x11 {
 			Self::Japanese
 		} else {
 			Self::English
 		}
 	}
+
 	//------------------------------------------------------------------------------
-	/** 同じ意味の静的な日英文言から、起動時に決めた言語を借用して返します。 */
+	/**
+	 * 同じ意味の静的な日英文言から、起動時に決めた言語を借用して返します。
+	 *
+	 * # Arguments
+	 *
+	 * - `japanese`: 日本語表示時に選ぶ文言。
+	 * - `english`: それ以外の表示時に選ぶ文言。
+	 *
+	 * # Returns
+	 *
+	 * 渡された二つの文言の片方を、入力と同じ寿命で借用して返します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn text<'a>(self, japanese: &'a str, english: &'a str) -> &'a str {
+		// 起動時に決まった言語の文言だけを借用し、元の文字列を変更しない
 		match self {
 			Self::Japanese => japanese,
 			Self::English => english,
 		}
 	}
+
 	//------------------------------------------------------------------------------
-	/** 診断状態を対象範囲の限定された表示へ変換します。 */
+	/**
+	 * 診断状態を対象範囲の限定された表示へ変換します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn status(self, value: ScanStatus) -> &'static str {
+		// 診断の状態分類を表示へ対応させ、部分失敗を成功の文言へ変換しない
 		let (ja, en) = match value {
 			ScanStatus::TargetsFound => ("対象検出", "Targets found"),
 			ScanStatus::NoTargets => ("対象未検出（このファイル）", "No targets in this file"),
@@ -145,10 +183,14 @@ impl Language {
 		};
 		self.text(ja, en)
 	}
+
 	//------------------------------------------------------------------------------
-	/** 群全体の変更を止める型付き理由を翻訳します。 */
+	/**
+	 * 群全体の変更を止める型付き理由を翻訳します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn issue(self, value: IssueCode) -> &'static str {
+		// 全群の変更を止めた型付き理由を、利用者向けの言語へ対応させる
 		let (ja, en) = match value {
 			IssueCode::UnsupportedJava => (
 				"対応する Windows x64 Java 11/17/21/25 ではありません。",
@@ -194,10 +236,14 @@ impl Language {
 		};
 		self.text(ja, en)
 	}
+
 	//------------------------------------------------------------------------------
-	/** 適用不可を成功へ言い換えず、型付き計画理由を翻訳します。 */
+	/**
+	 * 適用不可を成功へ言い換えず、型付き計画理由を翻訳します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn plan(self, value: &PlanError) -> &'static str {
+		// 対象ゼロと入力不備・群の失敗を、それぞれの計画理由として区別する
 		let (ja, en) = match value {
 			PlanError::EmptySelection => ("ストアが選択されていません。", "No stores selected."),
 			PlanError::Blocked { .. } => (
@@ -215,10 +261,14 @@ impl Language {
 		};
 		self.text(ja, en)
 	}
+
 	//------------------------------------------------------------------------------
-	/** 適用・復元の実工程を翻訳します。 */
+	/**
+	 * 適用・復元の実工程を翻訳します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn phase(self, value: TransactionPhase) -> &'static str {
+		// backend の実工程を翻訳し、推測した進捗を表示しない
 		let (ja, en) = match value {
 			TransactionPhase::Validate => (
 				"診断と現在の実体を再検証",
@@ -262,10 +312,14 @@ impl Language {
 		};
 		self.text(ja, en)
 	}
+
 	//------------------------------------------------------------------------------
-	/** 検証済みの主状態を翻訳し、未完了を成功表示しません。 */
+	/**
+	 * 検証済みの主状態を翻訳し、未完了を成功表示しません。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn state(self, value: TransactionState) -> &'static str {
+		// 検証済みの主状態を翻訳し、未完了と完全復旧の意味を保つ
 		let (ja, en) = match value {
 			TransactionState::Aborted => (
 				"元対象の変更前に終了",
@@ -295,10 +349,14 @@ impl Language {
 		};
 		self.text(ja, en)
 	}
+
 	//------------------------------------------------------------------------------
-	/** 履歴と現物の照合結果を翻訳します。 */
+	/**
+	 * 履歴と現物の照合結果を翻訳します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn history(self, value: HistoryState) -> &'static str {
+		// 保存履歴と現物の照合状態を、そのまま利用者向けの案内へ対応させる
 		let (ja, en) = match value {
 			HistoryState::Applied => ("適用済み", "Applied"),
 			HistoryState::Restored => ("復元済み", "Restored"),
@@ -319,10 +377,14 @@ impl Language {
 		};
 		self.text(ja, en)
 	}
+
 	//------------------------------------------------------------------------------
-	/** 復元対象の現物状態を翻訳します。 */
+	/**
+	 * 復元対象の現物状態を翻訳します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn item(self, value: ItemState) -> &'static str {
+		// 元・適用後・欠落・未知の分類を保ち、復元可能性を文言から推測しない
 		let (ja, en) = match value {
 			ItemState::Original => ("元の内容", "Original contents"),
 			ItemState::Applied => ("適用後の内容", "Applied contents"),
@@ -331,10 +393,14 @@ impl Language {
 		};
 		self.text(ja, en)
 	}
+
 	//------------------------------------------------------------------------------
-	/** 安定した transaction 分類を翻訳します。 */
+	/**
+	 * 安定した transaction 分類を翻訳します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn code(self, value: TransactionCode) -> &'static str {
+		// 安定した失敗 code を翻訳し、外部出力本文に依存しない案内を作る
 		let (ja, en) = match value {
 			TransactionCode::Busy => (
 				"別のアプリが対象を操作しています。",
@@ -405,8 +471,11 @@ impl Language {
 		};
 		self.text(ja, en)
 	}
+
 	//------------------------------------------------------------------------------
-	/** 階層を失わず主失敗・状態・rollback 原因を翻訳し、秘密は含めません。 */
+	/**
+	 * 階層を失わず主失敗・状態・rollback 原因を翻訳し、秘密は含めません。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn transaction_error(self, value: &TransactionError) -> String {
 		let mut text = format!(
@@ -415,30 +484,39 @@ impl Language {
 			self.phase(value.phase),
 			self.state(value.state)
 		);
+		// 対象パスが判明している場合だけ、詳細へその場所を添える
 		if let Some(path) = &value.path {
 			text.push_str(&format!("\n{}", path.display()));
 		}
+		// 保存されている実 OS code を添え、主分類だけで下位原因を失わない
 		if let Some(code) = value.os_code {
 			text.push_str(&format!("\nWindows: {code}"));
 		}
+		// transaction の記録がある場合だけ、復旧履歴の識別子を添える
 		if let Some(id) = &value.transaction_id {
 			text.push_str(&format!("\nID: {id}"));
 		}
+		// 子の実行失敗を保持している場合は、その型付き理由を補足する
 		if let Some(error) = &value.process_error {
 			text.push_str(&format!("\n{}", self.process(error)));
 		}
+		// file の安全性検査の失敗を、元の分類のまま詳細へ添える
 		if let Some(error) = &value.file_error {
 			text.push_str(&format!("\n{}", self.file(error)));
 		}
+		// Java の選択・再照合の下位失敗を補足する
 		if let Some(error) = &value.java_error {
 			text.push_str(&format!("\n{}", self.java(error)));
 		}
+		// 診断の下位失敗を補足し、計画の主分類だけに縮約しない
 		if let Some(error) = &value.scan_error {
 			text.push_str(&format!("\n{}", self.failure(error)));
 		}
+		// 元の計画理由がある場合だけ、全群を止めた条件を補足する
 		if let Some(error) = &value.plan_error {
 			text.push_str(&format!("\n{}", self.plan(error)));
 		}
+		// 対象位置がある場合は利用者向けの 1 始まりへ変換し、群の失敗と区別する
 		if let Some(item) = value.item {
 			text.push_str(&format!(
 				"\n{}: {}",
@@ -446,19 +524,23 @@ impl Language {
 				item + 1
 			));
 		}
+		// 置換後の全残存証拠を列挙し、未知や欠落の判断材料を残す
 		for evidence in &value.evidence {
 			text.push_str(&format!(
 				"\n{}: {}",
 				self.text("確認した実体", "Inspected artifact"),
 				evidence.path.display()
 			));
+			// 取得できた実体だけにハッシュを表示し、失敗した取得の値を捏造しない
 			if let Some(hash) = &evidence.sha256 {
 				text.push_str(&format!("\nSHA-256: {hash}"));
 			}
+			// 証拠の取得失敗も同じパスに結び付けて案内する
 			if let Some(error) = &evidence.failure {
 				text.push_str(&format!("\n{}", self.file(error)));
 			}
 		}
+		// 主原因と別に全 rollback 失敗を表示し、復旧失敗で最初の原因を上書きしない
 		for error in &value.rollback_errors {
 			text.push_str(&format!(
 				"\n{}: {}",
@@ -468,10 +550,14 @@ impl Language {
 		}
 		text
 	}
+
 	//------------------------------------------------------------------------------
-	/** Java 選択の原因を型から翻訳します。 */
+	/**
+	 * Java 選択の原因を型から翻訳します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn java(self, value: &JavaError) -> String {
+		// Java の選択理由を型から翻訳し、vendor 等の自己申告を安全保証へ変換しない
 		match value {
 			JavaError::File(error) => self.file(error),
 			JavaError::Process(error) => self.process(error),
@@ -501,10 +587,14 @@ impl Language {
 				.to_owned(),
 		}
 	}
+
 	//------------------------------------------------------------------------------
-	/** パスワード・子プロセスの失敗を全文や秘密なしで翻訳します。 */
+	/**
+	 * パスワード・子プロセスの失敗を全文や秘密なしで翻訳します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn process(self, value: &ProcessError) -> String {
+		// 秘密入力・実行・容量・中断の各理由を分け、子の出力全文は含めない
 		let (ja, en) = match value {
 			ProcessError::InvalidPassword => (
 				"パスワードが未入力、長すぎる、または制御文字を含みます。",
@@ -540,6 +630,7 @@ impl Language {
 			),
 		};
 		let mut text = self.text(ja, en).to_owned();
+		// I/O の OS code と異常終了の code を、対応する原因にだけ添える
 		match value {
 			ProcessError::Io {
 				os_code: Some(code),
@@ -555,10 +646,14 @@ impl Language {
 		}
 		text
 	}
+
 	//------------------------------------------------------------------------------
-	/** 実体と属性の拒否理由を型から翻訳します。 */
+	/**
+	 * 実体と属性の拒否理由を型から翻訳します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn file(self, value: &FileSafetyError) -> String {
+		// file の仕様非対応・内容変化・実 I/O 失敗を区別して案内する
 		let (ja, en) = match value {
 			FileSafetyError::UnsupportedPath => (
 				"対応する絶対ローカルパスではありません。",
@@ -602,6 +697,7 @@ impl Language {
 			),
 		};
 		let mut text = self.text(ja, en).to_owned();
+		// 実 OS code のある I/O 失敗に限り、診断へその code を添える
 		if let FileSafetyError::Io {
 			os_code: Some(code),
 			..
@@ -611,15 +707,20 @@ impl Language {
 		}
 		text
 	}
+
 	//------------------------------------------------------------------------------
-	/** 全一覧の詳細を型付きで翻訳します。開発用 reason は UI に使いません。 */
+	/**
+	 * 全一覧の詳細を型付きで翻訳します。開発用 reason は UI に使いません。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn failure(self, value: &ScanFailure) -> String {
+		// 診断の下位分類を保ち、自由文 reason に依存せず表示する
 		match value {
 			ScanFailure::File(value) => self.file(value),
 			ScanFailure::Java(value) => self.java(value),
 			ScanFailure::Process(value) => self.process(value),
 			ScanFailure::Inventory(value) => {
+				// RFC 解析の失敗分類を、対象の出力本文を含めず案内する
 				let (ja, en) = match value.code {
 					InventoryErrorCode::InputLimit => (
 						"一覧が容量上限を超えます。",

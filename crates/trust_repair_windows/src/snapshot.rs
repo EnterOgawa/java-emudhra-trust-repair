@@ -2,8 +2,8 @@
 /*!
  * - ファイル: snapshot.rs
  * - 概要: ローカル NTFS の通常ファイルを読み取り、実体と metadata の snapshot を取得します。
- * - バージョン: 01.00.01
- * - 作成日: 2026/10/26
+ * - バージョン: 01.00.00
+ * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
  *
@@ -20,8 +20,7 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/26  実体 ID・hash・owner/group/DACL の読み取りを追加。
- * Ver.01.00.01  Shunji Ogawa  2026/10/26  検証付き transaction 永続化用の厳密 schema を追加。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
  * ```
  *
  * 備考:
@@ -97,7 +96,17 @@ pub enum FileSafetyError {
 
 impl std::fmt::Display for FileSafetyError {
 	//------------------------------------------------------------------------------
-	/** 診断用の構造化理由を表示します。GUI は variant から日英文言を選択します。 */
+	/**
+	 * 診断用の構造化理由を表示します。GUI は variant から日英文言を選択します。
+	 *
+	 * # Returns
+	 *
+	 * 出力先の書込みに成功すれば `Ok(())`。
+	 *
+	 * # Errors
+	 *
+	 * 出力先の `fmt::Error` を伝播します。途中までの出力は取り消しません。
+	 */
 	//------------------------------------------------------------------------------
 	fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(formatter, "ファイル安全性検査の失敗: {self:?}")
@@ -140,7 +149,17 @@ pub struct FileSnapshot {
 
 impl FileSnapshot {
 	//------------------------------------------------------------------------------
-	/** 同 volume 置換後の検査に限り、stage の検証済み snapshot の path を付け替えます。 */
+	/**
+	 * 同 volume 置換後の検査に限り、stage の検証済み snapshot の path を付け替えます。
+	 *
+	 * # Arguments
+	 *
+	 * - `path`: 同 volume の置換後に照合する実パス。
+	 *
+	 * # Returns
+	 *
+	 * hash・実体 ID・metadata を保持し、パスだけを更新した snapshot。
+	 */
 	//------------------------------------------------------------------------------
 	pub(crate) fn at_path(mut self, path: PathBuf) -> Self {
 		self.canonical_path = path;
@@ -148,56 +167,72 @@ impl FileSnapshot {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 正規化した通常ファイルの path を返します。 */
+	/**
+	 * 正規化した通常ファイルの path を返します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn canonical_path(&self) -> &Path {
 		&self.canonical_path
 	}
 
 	//------------------------------------------------------------------------------
-	/** 同一実体の重複統合と再照合に必要な ID を返します。 */
+	/**
+	 * 同一実体の重複統合と再照合に必要な ID を返します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn identity(&self) -> FileIdentity {
 		self.identity
 	}
 
 	//------------------------------------------------------------------------------
-	/** 全 byte の SHA-256 を返します。 */
+	/**
+	 * 全 byte の SHA-256 を返します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn sha256(&self) -> &str {
 		&self.sha256
 	}
 
 	//------------------------------------------------------------------------------
-	/** 元の byte 長を返します。 */
+	/**
+	 * 元の byte 長を返します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn length(&self) -> u64 {
 		self.length
 	}
 
 	//------------------------------------------------------------------------------
-	/** 保存と置換後の検証に必要な属性 bit を返します。 */
+	/**
+	 * 保存と置換後の検証に必要な属性 bit を返します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn attributes(&self) -> u32 {
 		self.attributes
 	}
 
 	//------------------------------------------------------------------------------
-	/** 作成日時の Windows FILETIME 値を返します。 */
+	/**
+	 * 作成日時の Windows FILETIME 値を返します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn creation_time(&self) -> u64 {
 		self.creation_time
 	}
 
 	//------------------------------------------------------------------------------
-	/** 内容更新の検出に使う更新日時の FILETIME 値を返します。 */
+	/**
+	 * 内容更新の検出に使う更新日時の FILETIME 値を返します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn last_write_time(&self) -> u64 {
 		self.last_write_time
 	}
 
 	//------------------------------------------------------------------------------
-	/** owner/group/DACL の元 descriptor を返します。SACL 保持を保証する値ではありません。 */
+	/**
+	 * owner/group/DACL の元 descriptor を返します。SACL 保持を保証する値ではありません。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn security_descriptor(&self) -> &[u8] {
 		&self.security_descriptor
@@ -208,10 +243,20 @@ impl FileSnapshot {
 	 * path を再度 read-only で開き、hash/実体/属性/owner/group/DACL/日時を再照合します。
 	 * 不一致は [`FileSafetyError::Changed`]、取得不能は元の検査失敗を返します。
 	 * lock や atomic compare-and-swap の代わりではありません。
+	 *
+	 * # Arguments
+	 *
+	 * - `max_bytes`: 再取得を許可する最大ファイル長（byte）。
+	 *
+	 * # Errors
+	 *
+	 * 保存済みの hash・実体・metadata と異なれば `Changed`。
+	 * 再取得の安全性検査や I/O の失敗は、その理由を返します。
 	 */
 	//------------------------------------------------------------------------------
 	pub fn revalidate(&self, max_bytes: usize) -> Result<(), FileSafetyError> {
 		let (current, _) = read_snapshot(&self.canonical_path, max_bytes)?;
+		// 内容だけでなく実体と metadata の差も変更として拒否する
 		if current != *self {
 			return Err(FileSafetyError::Changed);
 		}
@@ -223,6 +268,15 @@ impl FileSnapshot {
 /**
  * ファイルを一切書き換えず、安全な実体と全内容を一組にして返します。
  * 診断前後に同じ関数で照合してください。32 MiB を超す executable は別上限を指定できます。
+ *
+ * # Arguments
+ *
+ * - `path`: 全祖先も検査する、ローカルの絶対ファイルパス。
+ * - `max_bytes`: 全読込みを許可する最大 byte 数。
+ *
+ * # Returns
+ *
+ * 同じファイルハンドルから検証した snapshot と全 byte 列。両方の所有権を返します。
  *
  * # Errors
  *
@@ -245,10 +299,12 @@ pub fn read_snapshot(
 		.open(&canonical_path)
 		.map_err(|error| io_error("open_read", &error))?;
 	let before = file_information(&file)?;
+	// 複数 hard link の実体は一パスの変更で影響範囲を限定できないため拒否する
 	if before.nNumberOfLinks != 1 {
 		return Err(FileSafetyError::MultipleLinks);
 	}
 	let attrs = before.dwFileAttributes;
+	// directory を通常の保存対象として読み込まない
 	if attrs & FILE_ATTRIBUTE_DIRECTORY != 0 {
 		return Err(FileSafetyError::NotRegularFile);
 	}
@@ -257,10 +313,12 @@ pub fn read_snapshot(
 		| FILE_ATTRIBUTE_HIDDEN
 		| FILE_ATTRIBUTE_SYSTEM
 		| FILE_ATTRIBUTE_NOT_CONTENT_INDEXED;
+	// 保持を保証していない属性を、既知属性へ黙って削減しない
 	if attrs & !allowed != 0 {
 		return Err(FileSafetyError::UnsupportedAttributes { attributes: attrs });
 	}
 	let length = (u64::from(before.nFileSizeHigh) << 32) | u64::from(before.nFileSizeLow);
+	// 全読込み前に長さを制限し、巨大ファイルを buffer へ取り込まない
 	if length > max_bytes as u64 {
 		return Err(FileSafetyError::TooLarge);
 	}
@@ -274,6 +332,7 @@ pub fn read_snapshot(
 		.read_to_end(&mut bytes)
 		.map_err(|error| io_error("read", &error))?;
 	let after = file_information(&file)?;
+	// 読込み中の内容・実体・metadata・path の変化を検出し、混在した snapshot を返さない
 	if bytes.len() as u64 != length
 		|| length > max_bytes as u64
 		|| !same_information(&before, &after)
@@ -299,16 +358,26 @@ pub fn read_snapshot(
 }
 
 //------------------------------------------------------------------------------
-/** 入力の絶対 path と全祖先の reparse を検査します。未知の prefix や ADS は拒否します。 */
+/**
+ * 入力の絶対 path と全祖先の reparse を検査します。未知の prefix や ADS は拒否します。
+ *
+ * # Errors
+ *
+ * 相対パス、非対応 prefix、ADS、NUL、または祖先を含む reparse を拒否し、
+ * metadata の取得失敗は工程と OS コードを保持して返します。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn check_path(path: &Path) -> Result<(), FileSafetyError> {
+	// 相対パスを作業先へ依存させず、操作対象を絶対パスへ限定する
 	if !path.is_absolute() {
 		return Err(FileSafetyError::UnsupportedPath);
 	}
 	let mut drive = None;
 	// 元の path 自体を検査するため、canonicalize が隠す junction を見逃さない
 	for component in path.components() {
+		// prefix・root・通常要素だけを許可し、親参照や ADS を受理しない
 		match component {
+			// ローカル DOS drive に限定し、UNC や未知の device prefix を拒否する
 			Component::Prefix(prefix) => match prefix.kind() {
 				Prefix::Disk(value) | Prefix::VerbatimDisk(value) => drive = Some(value),
 				_ => return Err(FileSafetyError::UnsupportedPath),
@@ -336,6 +405,7 @@ pub(crate) fn check_path(path: &Path) -> Result<(), FileSafetyError> {
 	for ancestor in path.ancestors() {
 		let metadata =
 			fs::symlink_metadata(ancestor).map_err(|error| io_error("ancestor", &error))?;
+		// 対象だけでなく全祖先の reparse を拒否し、途中の別実体への誘導を防ぐ
 		if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
 			return Err(FileSafetyError::ReparsePoint);
 		}
@@ -344,7 +414,17 @@ pub(crate) fn check_path(path: &Path) -> Result<(), FileSafetyError> {
 }
 
 //------------------------------------------------------------------------------
-/** 所有借用中の file handle から標準情報を取得します。API 失敗は伝播します。 */
+/**
+ * 所有借用中の file handle から標準情報を取得します。API 失敗は伝播します。
+ *
+ * # Returns
+ *
+ * 借用した同じ handle から取得した標準ファイル情報。
+ *
+ * # Errors
+ *
+ * Windows API が失敗した場合、直後に取得した OS コードを返します。
+ */
 //------------------------------------------------------------------------------
 fn file_information(file: &File) -> Result<BY_HANDLE_FILE_INFORMATION, FileSafetyError> {
 	let mut info = BY_HANDLE_FILE_INFORMATION::default();
@@ -356,7 +436,17 @@ fn file_information(file: &File) -> Result<BY_HANDLE_FILE_INFORMATION, FileSafet
 }
 
 //------------------------------------------------------------------------------
-/** 同じ handle から 128 bit ID を取得します。不明時は変更を許可しません。 */
+/**
+ * 同じ handle から 128 bit ID を取得します。不明時は変更を許可しません。
+ *
+ * # Returns
+ *
+ * volume serial と 128 bit の file ID。
+ *
+ * # Errors
+ *
+ * Windows API で ID を取得できなければ、工程と OS コードを返します。
+ */
 //------------------------------------------------------------------------------
 fn file_identity(file: &File) -> Result<FileIdentity, FileSafetyError> {
 	let mut info = FILE_ID_INFO::default();
@@ -379,7 +469,13 @@ fn file_identity(file: &File) -> Result<FileIdentity, FileSafetyError> {
 }
 
 //------------------------------------------------------------------------------
-/** 開いた実体の filesystem が NTFS であることを handle から確認します。 */
+/**
+ * 開いた実体の filesystem が NTFS であることを handle から確認します。
+ *
+ * # Errors
+ *
+ * volume 情報を取得できない、または filesystem が NTFS でない場合に失敗します。
+ */
 //------------------------------------------------------------------------------
 fn check_volume(file: &File) -> Result<(), FileSafetyError> {
 	let mut name = [0_u16; 64];
@@ -403,6 +499,7 @@ fn check_volume(file: &File) -> Result<(), FileSafetyError> {
 		.iter()
 		.position(|value| *value == 0)
 		.ok_or(FileSafetyError::NotLocalNtfs)?;
+	// ローカル NTFS の保証範囲だけを採用し、未知の filesystem へ適用しない
 	if OsString::from_wide(&name[..end]) != "NTFS" {
 		return Err(FileSafetyError::NotLocalNtfs);
 	}
@@ -410,7 +507,17 @@ fn check_volume(file: &File) -> Result<(), FileSafetyError> {
 }
 
 //------------------------------------------------------------------------------
-/** owner/group/DACL の self-relative descriptor を alignment を保った領域へ取得します。 */
+/**
+ * owner/group/DACL の self-relative descriptor を alignment を保った領域へ取得します。
+ *
+ * # Returns
+ *
+ * owner・group・DACL を取得した descriptor の byte 列。
+ *
+ * # Errors
+ *
+ * 必要長を取得できない、1 MiB を超える、または descriptor の取得に失敗した場合。
+ */
 //------------------------------------------------------------------------------
 fn security(file: &File) -> Result<Vec<u8>, FileSafetyError> {
 	let flags = OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION;
@@ -425,6 +532,7 @@ fn security(file: &File) -> Result<Vec<u8>, FileSafetyError> {
 			&mut needed,
 		);
 	}
+	// 必要容量の異常を検出してから、descriptor の取得領域を確保する
 	if needed == 0 || needed > 1024 * 1024 {
 		return Err(last_error("security_size"));
 	}
@@ -451,7 +559,14 @@ fn security(file: &File) -> Result<Vec<u8>, FileSafetyError> {
 }
 
 //------------------------------------------------------------------------------
-/** `::$DATA` 以外の named stream がないことを完全列挙で確認します。 */
+/**
+ * `::$DATA` 以外の named stream がないことを完全列挙で確認します。
+ *
+ * # Errors
+ *
+ * 列挙 API の失敗、または通常の `::$DATA` 以外の stream が存在する場合。
+ * 列挙ハンドルは成功・失敗のどちらでも閉じます。
+ */
 //------------------------------------------------------------------------------
 fn check_streams(path: &Path) -> Result<(), FileSafetyError> {
 	let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
@@ -465,8 +580,10 @@ fn check_streams(path: &Path) -> Result<(), FileSafetyError> {
 			0,
 		)
 	};
+	// 列挙開始の失敗を確認し、正常な列挙終端だけを空一覧として扱う
 	if handle == INVALID_HANDLE_VALUE {
 		let error = io::Error::last_os_error();
+		// stream の列挙終端だけは成功とし、アクセス失敗を不在へ変換しない
 		if error.raw_os_error() == Some(ERROR_HANDLE_EOF as i32) {
 			return Ok(());
 		}
@@ -480,6 +597,7 @@ fn check_streams(path: &Path) -> Result<(), FileSafetyError> {
 				.iter()
 				.position(|unit| *unit == 0)
 				.ok_or(FileSafetyError::NamedStreams)?;
+			// 通常データ以外の stream があれば、保存で失われる metadata として拒否する
 			if OsString::from_wide(&info.cStreamName[..end]) != "::$DATA" {
 				return Err(FileSafetyError::NamedStreams);
 			}
@@ -488,8 +606,11 @@ fn check_streams(path: &Path) -> Result<(), FileSafetyError> {
 				== 0
 			{
 				let error = io::Error::last_os_error();
-				if matches!(error.raw_os_error(), Some(code) if code == ERROR_HANDLE_EOF as i32 || code == ERROR_NO_MORE_FILES as i32)
-				{
+				// 既知の列挙終端でだけ反復を終え、途中の OS 失敗は伝播する
+				if matches!(
+					error.raw_os_error(),
+					Some(code) if code == ERROR_HANDLE_EOF as i32 || code == ERROR_NO_MORE_FILES as i32
+				) {
 					return Ok(());
 				}
 				return Err(io_error("next_stream", &error));
@@ -498,6 +619,7 @@ fn check_streams(path: &Path) -> Result<(), FileSafetyError> {
 	})();
 	// SAFETY: 成功した列挙 handle を一度だけ閉じ、失敗も呼出し元へ返す
 	let closed = unsafe { FindClose(handle) };
+	// 列挙が成功しても、所有 handle の close 失敗を成功へ変換しない
 	if closed == 0 {
 		return Err(last_error("close_streams"));
 	}
@@ -505,7 +627,9 @@ fn check_streams(path: &Path) -> Result<(), FileSafetyError> {
 }
 
 //------------------------------------------------------------------------------
-/** access time を除く比較対象の metadata を比較します。 */
+/**
+ * access time を除く比較対象の metadata を比較します。
+ */
 //------------------------------------------------------------------------------
 fn same_information(left: &BY_HANDLE_FILE_INFORMATION, right: &BY_HANDLE_FILE_INFORMATION) -> bool {
 	left.dwFileAttributes == right.dwFileAttributes
@@ -517,21 +641,27 @@ fn same_information(left: &BY_HANDLE_FILE_INFORMATION, right: &BY_HANDLE_FILE_IN
 }
 
 //------------------------------------------------------------------------------
-/** FILETIME の二つの DWORD を lossless な u64 値へ結合します。 */
+/**
+ * FILETIME の二つの DWORD を lossless な u64 値へ結合します。
+ */
 //------------------------------------------------------------------------------
 fn filetime(value: windows_sys::Win32::Foundation::FILETIME) -> u64 {
 	(u64::from(value.dwHighDateTime) << 32) | u64::from(value.dwLowDateTime)
 }
 
 //------------------------------------------------------------------------------
-/** 最後の OS エラーを取得し、固定工程を付加します。 */
+/**
+ * 最後の OS エラーを取得し、固定工程を付加します。
+ */
 //------------------------------------------------------------------------------
 fn last_error(operation: &'static str) -> FileSafetyError {
 	io_error(operation, &io::Error::last_os_error())
 }
 
 //------------------------------------------------------------------------------
-/** 外部エラー本文を複製せず、OS コードを保持します。 */
+/**
+ * 外部エラー本文を複製せず、OS コードを保持します。
+ */
 //------------------------------------------------------------------------------
 fn io_error(operation: &'static str, error: &io::Error) -> FileSafetyError {
 	FileSafetyError::Io {
@@ -553,7 +683,9 @@ mod tests {
 	static NEXT_FIXTURE: AtomicUsize = AtomicUsize::new(0);
 
 	//------------------------------------------------------------------------------
-	/** artifacts 配下の新しい単一ファイル path を作ります。既存の対象を上書きしません。 */
+	/**
+	 * artifacts 配下の新しい単一ファイル path を作ります。既存の対象を上書きしません。
+	 */
 	//------------------------------------------------------------------------------
 	fn fixture_path() -> PathBuf {
 		let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -570,7 +702,9 @@ mod tests {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 全 byte・128 bit ID・owner/group/DACL を取得し、外部内容変更を再照合で拒否します。 */
+	/**
+	 * 全 byte・128 bit ID・owner/group/DACL を取得し、外部内容変更を再照合で拒否します。
+	 */
 	//------------------------------------------------------------------------------
 	#[test]
 	fn snapshots_metadata_and_detects_content_replacement() {
@@ -587,7 +721,9 @@ mod tests {
 	}
 
 	//------------------------------------------------------------------------------
-	/** hardlink・named stream・readonly・容量超過・相対 path を変更可能と判定しません。 */
+	/**
+	 * hardlink・named stream・readonly・容量超過・相対 path を変更可能と判定しません。
+	 */
 	//------------------------------------------------------------------------------
 	#[test]
 	fn rejects_links_streams_readonly_size_and_relative_paths() {
@@ -629,7 +765,9 @@ mod tests {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 診断後の属性変更も、内容が同じというだけで元の安全性判定を再利用しません。 */
+	/**
+	 * 診断後の属性変更も、内容が同じというだけで元の安全性判定を再利用しません。
+	 */
 	//------------------------------------------------------------------------------
 	#[test]
 	fn rejects_metadata_change_even_with_identical_content() {

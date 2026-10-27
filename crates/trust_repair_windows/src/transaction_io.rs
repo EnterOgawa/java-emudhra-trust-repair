@@ -2,8 +2,8 @@
 /*!
  * - ファイル: transaction_io.rs
  * - 概要: transaction の Windows 排他、限定 ACL、metadata 検査と置換を包みます。
- * - バージョン: 01.01.00
- * - 作成日: 2026/10/26
+ * - バージョン: 01.00.00
+ * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
  *
@@ -20,9 +20,7 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/26  限定 ACL、SACL/追加 metadata 拒否、同 volume 置換を追加。
- * Ver.01.00.01  Shunji Ogawa  2026/10/26  明示内部 QA で stage/置換の停止境界を追加。
- * Ver.01.01.00  Shunji Ogawa  2026/10/26  SACL読取り特権の未割当てを仕様非対応と区別して通知。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
  * ```
  *
  * 備考:
@@ -82,7 +80,9 @@ pub(crate) struct IoFailure {
 
 impl From<io::Error> for IoFailure {
 	//------------------------------------------------------------------------------
-	/** OS 本文を保持せず code を所有します。ファイルや権限は変更しません。 */
+	/**
+	 * OS 本文を保持せず code を所有します。ファイルや権限は変更しません。
+	 */
 	//------------------------------------------------------------------------------
 	fn from(error: io::Error) -> Self {
 		Self {
@@ -94,11 +94,16 @@ impl From<io::Error> for IoFailure {
 }
 
 /// OS の LocalAlloc の所有領域です。生成時だけ pointer を受け取ります。
-struct LocalDescriptor(*mut std::ffi::c_void);
+struct LocalDescriptor(
+	/// LocalFree で一度だけ解放する、OS allocator の descriptor。
+	*mut std::ffi::c_void,
+);
 
 impl Drop for LocalDescriptor {
 	//------------------------------------------------------------------------------
-	/** OS の専用 allocator で一度だけ解放します。 */
+	/**
+	 * OS の専用 allocator で一度だけ解放します。
+	 */
 	//------------------------------------------------------------------------------
 	fn drop(&mut self) {
 		// SAFETY: SDDL 変換に成功した LocalAlloc の pointer を所有する
@@ -122,36 +127,49 @@ struct SecurityParts<'a> {
 }
 
 //------------------------------------------------------------------------------
-/** 不正な相対 offset を FFI に渡さず検査します。SACL を含む descriptor は拒否します。 */
+/**
+ * 不正な相対 offset を FFI に渡さず検査します。SACL を含む descriptor は拒否します。
+ *
+ * # Returns
+ *
+ * owner・group・DACL の範囲と保護状態。境界・形式の不整合や SACL があれば `None`。
+ */
 //------------------------------------------------------------------------------
 fn parts(bytes: &[u8]) -> Option<SecurityParts<'_>> {
+	// descriptor の既知 header が揃う前に、相対 offset や SID を解釈しない
 	if bytes.len() < 20 || bytes[0] != 1 {
 		return None;
 	}
 	let control = u16::from_le_bytes(bytes[2..4].try_into().ok()?);
+	// 自己相対形式と SACL 不在を要求し、保全未対応の情報を黙って省かない
 	if control & 0x8000 == 0 || bytes[12..16] != [0; 4] {
 		return None;
 	}
 	let sid = |offset: usize| -> Option<&[u8]> {
 		let start = u32::from_le_bytes(bytes[offset..offset + 4].try_into().ok()?) as usize;
+		// SID の参照先を header 外の領域へ限定する
 		if start < 20 {
 			return None;
 		}
 		let header = bytes.get(start..start.checked_add(8)?)?;
+		// SID の revision と要素数を確認してから、必要な byte 範囲を求める
 		if header[0] != 1 || header[1] > 15 {
 			return None;
 		}
 		bytes.get(start..start.checked_add(8 + usize::from(header[1]) * 4)?)
 	};
 	let offset = u32::from_le_bytes(bytes[16..20].try_into().ok()?) as usize;
+	// DACL の不在・存在を区別し、存在する場合は header と ACE を検査する
 	let dacl = if offset == 0 {
 		None
 	} else {
+		// 不正な DACL offset や不整合な制御 bit を FFI へ渡さない
 		if offset < 20 || control & 4 == 0 {
 			return None;
 		}
 		let header = bytes.get(offset..offset.checked_add(8)?)?;
 		let size = usize::from(u16::from_le_bytes(header[2..4].try_into().ok()?));
+		// ACL の最小 header より短い宣言を拒否し、範囲外の ACE を解釈しない
 		if size < 8 {
 			return None;
 		}
@@ -162,14 +180,17 @@ fn parts(bytes: &[u8]) -> Option<SecurityParts<'_>> {
 		for _ in 0..count {
 			let ace = acl.get(cursor..cursor.checked_add(4)?)?;
 			let size = usize::from(u16::from_le_bytes(ace[2..4].try_into().ok()?));
+			// 保全対象を既知の allow/deny ACE に限定し、複雑な権限を推測して再構築しない
 			if size < 16 || !matches!(ace[0], 0 | 1) || ace[1] & !0x1f != 0 {
 				return None;
 			}
 			let full = acl.get(cursor..cursor.checked_add(size)?)?;
+			// ACE 内 SID の revision・要素数・宣言長を照合し、余剰や途中欠落を受理しない
 			if full[8] != 1 || full[9] > 15 || size != 16 + usize::from(full[9]) * 4 {
 				return None;
 			}
 			cursor = cursor.checked_add(size)?;
+			// 全 ACE が宣言済み ACL 領域へ収まった場合だけ、権限の比較材料にする
 			if cursor > acl.len() {
 				return None;
 			}
@@ -185,35 +206,45 @@ fn parts(bytes: &[u8]) -> Option<SecurityParts<'_>> {
 }
 
 //------------------------------------------------------------------------------
-/** schema 内の descriptor を境界検査します。未知の SACL を空として解釈しません。 */
+/**
+ * schema 内の descriptor を境界検査します。未知の SACL を空として解釈しません。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn valid_security(bytes: &[u8]) -> bool {
 	bytes.len() <= 1024 * 1024 && parts(bytes).is_some()
 }
 
 //------------------------------------------------------------------------------
-/** padding/相対配置の差を除き、owner/group/DACL と継承抑止が一致する場合だけ true。 */
+/**
+ * padding/相対配置の差を除き、owner/group/DACL と継承抑止が一致する場合だけ true。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn same_security(left: &[u8], right: &[u8]) -> bool {
 	matches!((parts(left), parts(right)), (Some(left), Some(right)) if left == right)
 }
 
 //------------------------------------------------------------------------------
-/** Win32 へ渡す終端 NUL path を損失変換せず作ります。上位で NUL/ADS/祖先を検査します。 */
+/**
+ * Win32 へ渡す終端 NUL path を損失変換せず作ります。上位で NUL/ADS/祖先を検査します。
+ */
 //------------------------------------------------------------------------------
 fn wide(path: &Path) -> Vec<u16> {
 	path.as_os_str().encode_wide().chain([0]).collect()
 }
 
 //------------------------------------------------------------------------------
-/** 最後の Windows code を他の API より先に保存します。 */
+/**
+ * 最後の Windows code を他の API より先に保存します。
+ */
 //------------------------------------------------------------------------------
 fn last() -> IoFailure {
 	io::Error::last_os_error().into()
 }
 
 //------------------------------------------------------------------------------
-/** 追加 metadata を安全に扱えない分類を返します。権限を補正しません。 */
+/**
+ * 追加 metadata を安全に扱えない分類を返します。権限を補正しません。
+ */
 //------------------------------------------------------------------------------
 fn unsupported() -> IoFailure {
 	IoFailure {
@@ -224,9 +255,12 @@ fn unsupported() -> IoFailure {
 }
 
 //------------------------------------------------------------------------------
-/** path検査の実OS失敗を保持し、リンク等の仕様非対応と権限不足を区別します。 */
+/**
+ * path検査の実OS失敗を保持し、リンク等の仕様非対応と権限不足を区別します。
+ */
 //------------------------------------------------------------------------------
 fn file_failure(error: FileSafetyError) -> IoFailure {
+	// 実際の OS 失敗と、link 等の非対応条件を分けて上位へ伝える
 	match error {
 		FileSafetyError::Io {
 			os_code: Some(code),
@@ -237,7 +271,22 @@ fn file_failure(error: FileSafetyError) -> IoFailure {
 }
 
 //------------------------------------------------------------------------------
-/** query に必要な整列済み領域を確保し、OS が返した descriptor だけを複製します。 */
+/**
+ * query に必要な整列済み領域を確保し、OS が返した descriptor だけを複製します。
+ *
+ * # Arguments
+ *
+ * - `file`: query 可能な handle を持つ、呼出し中所有される file。
+ * - `flags`: 問い合わせる security 情報の Windows API フラグ。
+ *
+ * # Returns
+ *
+ * OS が返した descriptor を所有する byte 列。
+ *
+ * # Errors
+ *
+ * 必要長が 20 byte 未満・1 MiB 超過、または OS の問い合わせ失敗。
+ */
 //------------------------------------------------------------------------------
 fn descriptor(file: &File, flags: u32) -> Result<Vec<u8>, IoFailure> {
 	let mut needed = 0;
@@ -251,6 +300,7 @@ fn descriptor(file: &File, flags: u32) -> Result<Vec<u8>, IoFailure> {
 			&mut needed,
 		);
 	}
+	// OS が返す必要容量に上限を設け、異常な descriptor 領域を確保しない
 	if !(20..=1024 * 1024).contains(&needed) {
 		return Err(last());
 	}
@@ -276,7 +326,17 @@ fn descriptor(file: &File, flags: u32) -> Result<Vec<u8>, IoFailure> {
 }
 
 //------------------------------------------------------------------------------
-/** 現 process の SID を SDDL 用文字列として取得します。秘密や環境を読みません。 */
+/**
+ * 現 process の SID を SDDL 用文字列として取得します。秘密や環境を読みません。
+ *
+ * # Returns
+ *
+ * SDDL へ埋め込める現 process 利用者の SID。token と OS 割当て文字列は本関数で解放します。
+ *
+ * # Errors
+ *
+ * token・必要長・情報・SID 文字列の取得、または UTF-16 の復号に失敗した場合。
+ */
 //------------------------------------------------------------------------------
 fn current_sid() -> Result<String, IoFailure> {
 	let mut raw = std::ptr::null_mut();
@@ -297,6 +357,7 @@ fn current_sid() -> Result<String, IoFailure> {
 			&mut needed,
 		);
 	}
+	// token 情報の取得容量を制限し、不正な長さを allocator へ渡さない
 	if needed == 0 || needed > 64 * 1024 {
 		return Err(last());
 	}
@@ -335,7 +396,17 @@ fn current_sid() -> Result<String, IoFailure> {
 }
 
 //------------------------------------------------------------------------------
-/** 本人と Administrators だけを許可する、継承を止めた新規 object の ACL を作ります。 */
+/**
+ * 本人と Administrators だけを許可する、継承を止めた新規 object の ACL を作ります。
+ *
+ * # Returns
+ *
+ * LocalFree で解放する owner/group/DACL の所有値。
+ *
+ * # Errors
+ *
+ * 現利用者 SID の取得、または SDDL 変換の失敗。
+ */
 //------------------------------------------------------------------------------
 fn restricted_descriptor() -> Result<LocalDescriptor, IoFailure> {
 	let sid = current_sid()?;
@@ -360,7 +431,14 @@ fn restricted_descriptor() -> Result<LocalDescriptor, IoFailure> {
 }
 
 //------------------------------------------------------------------------------
-/** 既存 directory の owner と限定 DACL を照合します。既存の権限は変更しません。 */
+/**
+ * 既存 directory の owner と限定 DACL を照合します。既存の権限は変更しません。
+ *
+ * # Errors
+ *
+ * パス・directory・owner・限定 DACL・継承保護を確認できない場合。
+ * 既存の権限を広げて再試行しません。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn verify_private_directory(path: &Path) -> Result<(), IoFailure> {
 	check_path(path).map_err(file_failure)?;
@@ -369,6 +447,7 @@ pub(crate) fn verify_private_directory(path: &Path) -> Result<(), IoFailure> {
 		.share_mode(FILE_SHARE_READ | FILE_SHARE_DELETE)
 		.custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
 		.open(path)?;
+	// 通常 file を専用 directory として採用しない
 	if !file.metadata()?.is_dir() {
 		return Err(unsupported());
 	}
@@ -382,9 +461,11 @@ pub(crate) fn verify_private_directory(path: &Path) -> Result<(), IoFailure> {
 		unsafe { windows_sys::Win32::Security::GetSecurityDescriptorLength(expected.0) } as usize;
 	// SAFETY: OS が返した同じ descriptor の長さ以内だけ参照する
 	let bytes = unsafe { std::slice::from_raw_parts(expected.0.cast::<u8>(), length) };
+	// 実際と期待の descriptor を同じ境界検査へ通してから権限を比較する
 	let (Some(actual), Some(expected)) = (parts(&actual), parts(bytes)) else {
 		return Err(unsupported());
 	};
+	// 本人 owner・限定 DACL・継承保護が揃う root だけを採用し、既存 ACL を緩めない
 	if actual.owner != expected.owner || actual.dacl != expected.dacl || !actual.protected {
 		return Err(unsupported());
 	}
@@ -392,7 +473,14 @@ pub(crate) fn verify_private_directory(path: &Path) -> Result<(), IoFailure> {
 }
 
 //------------------------------------------------------------------------------
-/** 新規 directory を限定 ACL で一度だけ作ります。既存 object を上書きしません。 */
+/**
+ * 新規 directory を限定 ACL で一度だけ作ります。既存 object を上書きしません。
+ *
+ * # Errors
+ *
+ * 親・descriptor の検査、directory 作成、作成後の限定 ACL の照合に失敗した場合。
+ * 作成後の検査が失敗しても、作成物を自動削除しません。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn create_private_directory(path: &Path) -> Result<(), IoFailure> {
 	let parent = path.parent().ok_or_else(unsupported)?;
@@ -412,7 +500,21 @@ pub(crate) fn create_private_directory(path: &Path) -> Result<(), IoFailure> {
 }
 
 //------------------------------------------------------------------------------
-/** 同一 path の別 instance を、全 session 共通の生存期間 lock で抑止します。 */
+/**
+ * 同一 path の別 instance を、全 session 共通の生存期間 lock で抑止します。
+ *
+ * # Arguments
+ *
+ * - `path`: 同じ正規実体について大文字小文字を揃えてハッシュ化するパス。
+ *
+ * # Returns
+ *
+ * 生存期間で排他を保持する named mutex の所有 handle。drop で閉じます。
+ *
+ * # Errors
+ *
+ * パスの文字列表現・descriptor・mutex 作成の失敗、または既存 mutex があれば busy。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn target_lock(path: &Path) -> Result<OwnedHandle, IoFailure> {
 	let text = path.to_str().ok_or_else(unsupported)?.to_lowercase();
@@ -433,11 +535,13 @@ pub(crate) fn target_lock(path: &Path) -> Result<OwnedHandle, IoFailure> {
 	let raw = unsafe { CreateMutexW(&attrs, 0, name.as_ptr()) };
 	// SAFETY: 成否直後の code を他の API 前に取得する
 	let code = unsafe { GetLastError() };
+	// mutex の作成失敗時は所有化せず、取得した OS の失敗を返す
 	if raw.is_null() {
 		return Err(last());
 	}
 	// SAFETY: 作成/取得に成功した handle を一度だけ所有する
 	let handle = unsafe { OwnedHandle::from_raw_handle(raw) };
+	// 既存 mutex がある場合は handle を解放して busy とし、同一 thread の再入も拒否する
 	if code == ERROR_ALREADY_EXISTS {
 		return Err(IoFailure {
 			busy: true,
@@ -449,7 +553,17 @@ pub(crate) fn target_lock(path: &Path) -> Result<OwnedHandle, IoFailure> {
 }
 
 //------------------------------------------------------------------------------
-/** 書込みと置換の権限を要求し、内容は変えずに通常 write を抑止します。 */
+/**
+ * 書込みと置換の権限を要求し、内容は変えずに通常 write を抑止します。
+ *
+ * # Returns
+ *
+ * 通常 write を共有しない所有 file。呼出し側が確定直前まで保持し、drop で閉じます。
+ *
+ * # Errors
+ *
+ * write/delete/WRITE_DAC の権限確認、または保持用 handle の取得失敗。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn write_guard(path: &Path) -> Result<File, IoFailure> {
 	// Java 11 の FileInputStream は FILE_SHARE_DELETE を指定しないため、DELETE access の
@@ -472,7 +586,22 @@ struct ReadSecurityToken;
 
 impl ReadSecurityToken {
 	//------------------------------------------------------------------------------
-	/** 既存 thread token を上書きせず、利用可能な SACL 読取り特権だけを一時有効化します。 */
+	/**
+	 * 既存 thread token を上書きせず、利用可能な SACL 読取り特権だけを一時有効化します。
+	 *
+	 * # Returns
+	 *
+	 * 現 thread だけの impersonation を所有する guard。元の thread token は変更しません。
+	 *
+	 * # Errors
+	 *
+	 * 既存 thread token の存在、token・特権の取得、有効化の失敗。
+	 * impersonation 開始後の失敗は guard が解除してから返します。
+	 *
+	 * # Notes
+	 *
+	 * guard は生成した thread で破棄します。RevertToSelf に失敗した場合は abort します。
+	 */
 	//------------------------------------------------------------------------------
 	fn begin() -> Result<Self, IoFailure> {
 		let mut existing = std::ptr::null_mut();
@@ -533,8 +662,10 @@ impl ReadSecurityToken {
 		};
 		// SAFETY: AdjustTokenPrivileges 直後の code
 		let code = unsafe { GetLastError() };
+		// API 成功でも特権未割当てを検査し、SACL を読めると推測しない
 		if success == 0 || code != 0 {
 			return Err(
+				// API が code を返さない失敗にも権限不足の code を補い、実行失敗を失わない
 				io::Error::from_raw_os_error(if code == 0 { 1314 } else { code as i32 }).into(),
 			);
 		}
@@ -544,7 +675,9 @@ impl ReadSecurityToken {
 
 impl Drop for ReadSecurityToken {
 	//------------------------------------------------------------------------------
-	/** thread の一時特権を必ず解除します。解除不能なら特権を残して継続しません。 */
+	/**
+	 * thread の一時特権を必ず解除します。解除不能なら特権を残して継続しません。
+	 */
 	//------------------------------------------------------------------------------
 	fn drop(&mut self) {
 		// SAFETY: begin がこの thread で生成した impersonation だけを解除する
@@ -555,7 +688,14 @@ impl Drop for ReadSecurityToken {
 }
 
 //------------------------------------------------------------------------------
-/** SACL と追加 backup stream が空であることを検査します。取得不能は明示的拒否です。 */
+/**
+ * SACL と追加 backup stream が空であることを検査します。取得不能は明示的拒否です。
+ *
+ * # Errors
+ *
+ * 限定的な読取り特権の取得、descriptor の取得、非空 SACL、
+ * 追加 stream の列挙失敗、または保全未対応の stream が存在する場合。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn check_supported_metadata(path: &Path) -> Result<(), IoFailure> {
 	let _token = ReadSecurityToken::begin()?;
@@ -565,6 +705,7 @@ pub(crate) fn check_supported_metadata(path: &Path) -> Result<(), IoFailure> {
 		.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
 		.open(path)?;
 	let full = descriptor(&file, BACKUP_SECURITY_INFORMATION)?;
+	// SACL が存在する対象は、監査情報を失う置換へ進めない
 	if full.len() < 20 || full[12..16] != [0; 4] {
 		return Err(unsupported());
 	}
@@ -572,7 +713,18 @@ pub(crate) fn check_supported_metadata(path: &Path) -> Result<(), IoFailure> {
 }
 
 //------------------------------------------------------------------------------
-/** BackupRead の header を完全列挙し、EA/object-ID 等の保全未対応 stream を拒否します。 */
+/**
+ * BackupRead の header を完全列挙し、EA/object-ID 等の保全未対応 stream を拒否します。
+ *
+ * # Errors
+ *
+ * BackupRead の読込み・header・長さ・seek の失敗、列挙上限、
+ * または通常データ・security 以外の stream や stream 名を検出した場合。
+ *
+ * # Notes
+ *
+ * BackupRead の context は成否を問わず abort 指定で解放します。
+ */
 //------------------------------------------------------------------------------
 fn check_backup_streams(file: &File) -> Result<(), IoFailure> {
 	let mut context = std::ptr::null_mut();
@@ -596,14 +748,17 @@ fn check_backup_streams(file: &File) -> Result<(), IoFailure> {
 			{
 				return Err(last());
 			}
+			// 列挙終端で検査を成功終了し、context の解放処理へ進む
 			if read == 0 {
 				return Ok(());
 			}
+			// 途中までの stream header を完全な header として解釈しない
 			if read != 20 {
 				return Err(unsupported());
 			}
 			let id = u32::from_le_bytes(header[..4].try_into().map_err(|_| unsupported())?);
 			let size = u64::from_le_bytes(header[8..16].try_into().map_err(|_| unsupported())?);
+			// 通常データと security 以外や named stream は、保全未対応として拒否する
 			if !matches!(id, BACKUP_DATA | BACKUP_SECURITY_DATA) || header[16..20] != [0; 4] {
 				return Err(unsupported());
 			}
@@ -623,6 +778,7 @@ fn check_backup_streams(file: &File) -> Result<(), IoFailure> {
 			{
 				return Err(last());
 			}
+			// 指定した payload を全て飛ばせたことを確認してから、次の header を読む
 			if (u64::from(high) << 32) | u64::from(low) != size {
 				return Err(unsupported());
 			}
@@ -649,7 +805,21 @@ fn check_backup_streams(file: &File) -> Result<(), IoFailure> {
 }
 
 //------------------------------------------------------------------------------
-/** 新規 stage に元 descriptor で内容を保存し、元作成時刻/属性を設定します。 */
+/**
+ * 新規 stage に元 descriptor で内容を保存し、元作成時刻/属性を設定します。
+ *
+ * # Arguments
+ *
+ * - `path`: create_new で作成する、元対象と異なる新規 stage。
+ * - `bytes`: stage へ全体を書き込む内容。
+ * - `original`: owner/group/DACL・作成日時・属性の保持元。
+ * - `restore_mtime`: `true` の場合だけ、元の更新日時も設定します。
+ *
+ * # Errors
+ *
+ * descriptor の検査、作成・書込み・flush/sync・日時・属性の設定失敗。
+ * 途中 stage は削除せず、元対象には書き込みません。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn create_stage(
 	path: &Path,
@@ -657,6 +827,7 @@ pub(crate) fn create_stage(
 	original: &FileSnapshot,
 	restore_mtime: bool,
 ) -> Result<(), IoFailure> {
+	// 保存 descriptor を境界検査し、未知の権限情報を作成 API へ渡さない
 	if !valid_security(original.security_descriptor()) {
 		return Err(unsupported());
 	}
@@ -685,6 +856,7 @@ pub(crate) fn create_stage(
 			std::ptr::null_mut(),
 		)
 	};
+	// stage の新規作成に成功した handle だけを所有し、既存対象を再利用しない
 	if raw == INVALID_HANDLE_VALUE {
 		return Err(last());
 	}
@@ -700,6 +872,7 @@ pub(crate) fn create_stage(
 			file.as_raw_handle(),
 			&creation,
 			std::ptr::null(),
+			// 復元 stage の場合だけ元更新日時を設定し、適用 stage では内容変更の日時を維持する
 			if restore_mtime {
 				&modified
 			} else {
@@ -722,7 +895,13 @@ pub(crate) fn create_stage(
 }
 
 //------------------------------------------------------------------------------
-/** keytool が stage を書いた後に、元の保持対象属性と作成時刻を再設定します。 */
+/**
+ * keytool が stage を書いた後に、元の保持対象属性と作成時刻を再設定します。
+ *
+ * # Errors
+ *
+ * stage の取得、元作成日時または保持対象属性の設定失敗。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn finish_stage(path: &Path, original: &FileSnapshot) -> Result<(), IoFailure> {
 	let file = OpenOptions::new()
@@ -757,13 +936,24 @@ pub(crate) fn finish_stage(path: &Path, original: &FileSnapshot) -> Result<(), I
  * 置換の継承再計算で変わり得る DACL を、保存した元 ACL と保護状態へ正確に戻します。
  * 呼出し側は直前に stage の hash/実体 ID が target にあることを確認します。
  * 任意の権限追加は行わず、WRITE_DAC がなければ明示的に失敗します。
+ *
+ * # Arguments
+ *
+ * - `path`: 呼出し側が stage の実体・hash と照合済みの置換先。
+ * - `original`: 元 DACL と継承保護の保存値。
+ *
+ * # Errors
+ *
+ * 保存 descriptor の検査、WRITE_DAC handle の取得、または DACL 設定の失敗。
  */
 //------------------------------------------------------------------------------
 pub(crate) fn preserve_dacl(path: &Path, original: &FileSnapshot) -> Result<(), IoFailure> {
+	// 保存した DACL の範囲と保護状態を検査してから、置換先へ設定する
 	let Some(security) = parts(original.security_descriptor()) else {
 		return Err(unsupported());
 	};
 	let mut aligned = vec![0_u32; original.security_descriptor().len().div_ceil(4)];
+	// 元 descriptor の byte 列を整列済み領域へ複写し、FFI に必要な alignment を保つ
 	for (index, chunk) in original.security_descriptor().chunks(4).enumerate() {
 		let mut word = [0_u8; 4];
 		word[..chunk.len()].copy_from_slice(chunk);
@@ -775,6 +965,7 @@ pub(crate) fn preserve_dacl(path: &Path, original: &FileSnapshot) -> Result<(), 
 		.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
 		.open(path)?;
 	let flags = DACL_SECURITY_INFORMATION
+		// 保存時の保護状態に応じた flag を使い、任意に継承方針を変えない
 		| if security.protected {
 			PROTECTED_DACL_SECURITY_INFORMATION
 		} else {
@@ -791,9 +982,22 @@ pub(crate) fn preserve_dacl(path: &Path, original: &FileSnapshot) -> Result<(), 
 }
 
 //------------------------------------------------------------------------------
-/** merge エラー無視 flag を使わず同 volume の recovery copy 付きで置換します。 */
+/**
+ * merge エラー無視 flag を使わず同 volume の recovery copy 付きで置換します。
+ *
+ * # Arguments
+ *
+ * - `target`: 既存の置換先。呼出し側が直前に実体を照合します。
+ * - `stage`: 同 volume に準備した置換元。
+ * - `recovery`: 置換される実体の新規退避先。
+ *
+ * # Errors
+ *
+ * ReplaceFileW の失敗。部分状態の照合・復旧は呼出し側が行い、ここでは証拠を削除しません。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn replace(target: &Path, stage: &Path, recovery: &Path) -> Result<(), IoFailure> {
+	// 既存の recovery copy を上書きせず、先行する証拠を保全する
 	if fs::symlink_metadata(recovery).is_ok() {
 		return Err(unsupported());
 	}
@@ -822,7 +1026,18 @@ pub(crate) fn replace(target: &Path, stage: &Path, recovery: &Path) -> Result<()
 }
 
 //------------------------------------------------------------------------------
-/** 検証した欠落先だけへ stage を移動します。既存 path を上書きする flag はありません。 */
+/**
+ * 検証した欠落先だけへ stage を移動します。既存 path を上書きする flag はありません。
+ *
+ * # Arguments
+ *
+ * - `stage`: 同 volume の検証済み復旧元。
+ * - `target`: 呼出し側が根拠付きで欠落と判定した復旧先。
+ *
+ * # Errors
+ *
+ * MoveFileW の失敗。既存対象を上書きしません。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn move_to_missing(stage: &Path, target: &Path) -> Result<(), IoFailure> {
 	let stage = wide(stage);
@@ -835,7 +1050,9 @@ pub(crate) fn move_to_missing(stage: &Path, target: &Path) -> Result<(), IoFailu
 }
 
 //------------------------------------------------------------------------------
-/** FILETIME の lossless な分解を行います。 */
+/**
+ * FILETIME の lossless な分解を行います。
+ */
 //------------------------------------------------------------------------------
 fn time(value: u64) -> FILETIME {
 	FILETIME {
@@ -845,13 +1062,24 @@ fn time(value: u64) -> FILETIME {
 }
 
 //------------------------------------------------------------------------------
-/** 不足する通常の親 directory を作り、最終 backup root だけを限定 ACL で固定します。 */
+/**
+ * 不足する通常の親 directory を作り、最終 backup root だけを限定 ACL で固定します。
+ *
+ * # Returns
+ *
+ * 通常の親と限定 ACL を確認した、最終 root の canonical path。
+ *
+ * # Errors
+ *
+ * 親の作成・パス検査、最終 root の作成、または既存 root の限定 ACL 検査の失敗。
+ */
 //------------------------------------------------------------------------------
 pub(crate) fn prepare_root(path: &Path) -> Result<PathBuf, IoFailure> {
 	let parent = path.parent().ok_or_else(unsupported)?;
 	let mut existing = parent;
 	// 親を作る前に既存祖先を検査し、UNC/link の先へ先に新規 directory を作らない
 	loop {
+		// 既存の祖先へ達したら探索を終え、不在以外の取得失敗は親の作成前に返す
 		match fs::symlink_metadata(existing) {
 			Ok(_) => break,
 			Err(error) if error.kind() == io::ErrorKind::NotFound => {
@@ -863,6 +1091,7 @@ pub(crate) fn prepare_root(path: &Path) -> Result<PathBuf, IoFailure> {
 	check_path(existing).map_err(file_failure)?;
 	fs::create_dir_all(parent)?;
 	check_path(parent).map_err(file_failure)?;
+	// 最終 root がない場合だけ限定 ACL で新規作成し、既存 root は検証へ回す
 	if !path.exists() {
 		create_private_directory(path)?;
 	}

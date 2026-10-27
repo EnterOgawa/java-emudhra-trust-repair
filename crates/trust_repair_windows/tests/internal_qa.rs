@@ -2,23 +2,30 @@
 /*!
  * - ファイル: internal_qa.rs
  * - 概要: 所有する隔離子の実 kill と次回の現物分類・復旧・実 OS 拒否を検証します。
- * - バージョン: 01.00.01
- * - 作成日: 2026/10/26
+ * - バージョン: 01.00.00
+ * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
  *
- * ライセンス: SPDX-License-Identifier: Apache-2.0
- * Apache License, Version 2.0。全文はルートの LICENSE を参照してください。
+ * ライセンス:
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ * 本ファイルには Apache License, Version 2.0 が適用されます。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
  *
  * 更新履歴:
+ *
  * ```text
- * Ver.01.00.00  Shunji Ogawa  2026/10/26  永続化/置換/DACL 境界の実子終了と安全な次回復旧を追加。
- * Ver.01.00.01  Shunji Ogawa  2026/10/26  初回journal未作成の復旧後履歴・再適用/復元と読込拒否を検証。
+ * VerNo.        author        update      comment
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
  * ```
  *
- * 備考: internal-qa feature と明示した artifacts/internal-qa だけを使用します。通常は ignore。
+ * 備考:
+ *
+ * internal-qa feature と明示した artifacts/internal-qa だけを使用します。通常は ignore。
  */
 //------------------------------------------------------------------------------
 
@@ -45,7 +52,9 @@ use trust_repair_windows::{
 static NEXT_CASE: AtomicUsize = AtomicUsize::new(0);
 
 //------------------------------------------------------------------------------
-/** 明示された既存 QA root を、この workspace の新規専用領域内に限定します。 */
+/**
+ * 明示された既存 QA root を、この workspace の新規専用領域内に限定します。
+ */
 //------------------------------------------------------------------------------
 fn root() -> PathBuf {
 	let root = PathBuf::from(std::env::var_os("JTR_INTERNAL_QA_ROOT").expect("explicit QA root"))
@@ -60,14 +69,18 @@ fn root() -> PathBuf {
 }
 
 //------------------------------------------------------------------------------
-/** 既知通常 file だけを新規 directory へコピーします。既存 fixture は変更しません。 */
+/**
+ * 既知通常 file だけを新規 directory へコピーします。既存 fixture は変更しません。
+ */
 //------------------------------------------------------------------------------
 fn copy_directory(source: &Path, destination: &Path) {
 	fs::create_dir(destination).expect("new fixture directory");
+	// 所有 fixture の全要素を列挙し、reparse を除いた新規コピーだけを作る
 	for entry in fs::read_dir(source).expect("fixture source") {
 		let entry = entry.expect("fixture entry");
 		let kind = entry.file_type().expect("fixture type");
 		assert!(!kind.is_symlink());
+		// 通常 directory は再帰複写し、通常 file は既存を上書きせず複写する
 		if kind.is_dir() {
 			copy_directory(&entry.path(), &destination.join(entry.file_name()));
 		} else {
@@ -78,16 +91,20 @@ fn copy_directory(source: &Path, destination: &Path) {
 }
 
 //------------------------------------------------------------------------------
-/** 共通 Java のコピーだけから先に対象を除き、各 case で Java 自体を書換えない状態にします。 */
+/**
+ * 共通 Java のコピーだけから先に対象を除き、各 case で Java 自体を書換えない状態にします。
+ */
 //------------------------------------------------------------------------------
 fn prepare_shared_java() {
 	let root = root();
+	// 準備済みの共有 Java は再変更せず、同じ基準から各 case を作る
 	if root.join("prepared").exists() {
 		return;
 	}
 	let source =
 		PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../artifacts/diagnostics/integration");
 	copy_directory(&source.join("Java 21 読取 診断"), &root.join("Java"));
+	// 両形式の基準ストアを新規複写し、各試験の元材料を分ける
 	for (from, to) in [
 		("custom 日本語.jks", "base.jks"),
 		("custom 日本語.p12", "base.p12"),
@@ -129,7 +146,9 @@ fn prepare_shared_java() {
 }
 
 //------------------------------------------------------------------------------
-/** fixture 専用の公開済み password を、製品と同じ所有型で作ります。 */
+/**
+ * fixture 専用の公開済み password を、製品と同じ所有型で作ります。
+ */
 //------------------------------------------------------------------------------
 fn fixture_password() -> StorePassword {
 	StorePassword::new("changeit".to_owned()).expect("fixture password")
@@ -153,7 +172,9 @@ struct Case {
 
 impl Case {
 	//------------------------------------------------------------------------------
-	/** 既存の case を再診断します。対象原本や他の case を変更しません。 */
+	/**
+	 * 既存の case を再診断します。対象原本や他の case を変更しません。
+	 */
 	//------------------------------------------------------------------------------
 	fn load(path: PathBuf) -> Self {
 		assert!(path.canonicalize().expect("case path").starts_with(root()));
@@ -195,8 +216,11 @@ impl Case {
 			options,
 		}
 	}
+
 	//------------------------------------------------------------------------------
-	/** 同じ group 順の password を借用して通常の適用を行います。 */
+	/**
+	 * 同じ group 順の password を借用して通常の適用を行います。
+	 */
 	//------------------------------------------------------------------------------
 	fn apply(
 		&self,
@@ -212,8 +236,11 @@ impl Case {
 			|_| {},
 		)
 	}
+
 	//------------------------------------------------------------------------------
-	/** 変更対象二つの hash を返し、不明内容の拒否前後を照合できます。 */
+	/**
+	 * 変更対象二つの hash を返し、不明内容の拒否前後を照合できます。
+	 */
 	//------------------------------------------------------------------------------
 	fn hashes(&self) -> Vec<String> {
 		["custom.jks", "custom.p12"]
@@ -221,11 +248,15 @@ impl Case {
 			.map(|name| sha256_hex(&fs::read(self.path.join(name)).expect("target bytes")))
 			.collect()
 	}
+
 	//------------------------------------------------------------------------------
-	/** 復元の byte/保持 metadata/更新日時/全 inventory を元診断と再照合します。 */
+	/**
+	 * 復元の byte/保持 metadata/更新日時/全 inventory を元診断と再照合します。
+	 */
 	//------------------------------------------------------------------------------
 	fn assert_original(&self) {
 		let current = Self::load(self.path.clone());
+		// 全対象を元診断と照合し、復旧後の byte と全 inventory を両方確認する
 		for (before, after) in self.group.stores().iter().zip(current.group.stores()) {
 			assert_eq!(before.report().inventory(), after.report().inventory());
 			let old = before.snapshot().expect("before snapshot");
@@ -252,7 +283,9 @@ impl Case {
 }
 
 //------------------------------------------------------------------------------
-/** 二つの形式だけを新規 case へコピーします。共通 Java の metadata は変更しません。 */
+/**
+ * 二つの形式だけを新規 case へコピーします。共通 Java の metadata は変更しません。
+ */
 //------------------------------------------------------------------------------
 fn case(label: &str) -> Case {
 	let path = root().join(format!(
@@ -261,6 +294,7 @@ fn case(label: &str) -> Case {
 		NEXT_CASE.fetch_add(1, Ordering::Relaxed)
 	));
 	fs::create_dir(&path).expect("new case");
+	// 両形式を新規 case へ配置し、共有 Java の metadata は変えずに隔離する
 	for extension in ["jks", "p12"] {
 		fs::copy(
 			root().join(format!("base.{extension}")),
@@ -279,7 +313,9 @@ struct OwnedChild(
 
 impl Drop for OwnedChild {
 	//------------------------------------------------------------------------------
-	/** 親試験 panic 時にも所有する子だけを終了し、終了待ちします。 */
+	/**
+	 * 親試験 panic 時にも所有する子だけを終了し、終了待ちします。
+	 */
 	//------------------------------------------------------------------------------
 	fn drop(&mut self) {
 		let _kill = self.0.kill();
@@ -288,7 +324,9 @@ impl Drop for OwnedChild {
 }
 
 //------------------------------------------------------------------------------
-/** 同じ test exe の専用 fixture を起動し、指定境界が sync されるまで待ちます。 */
+/**
+ * 同じ test exe の専用 fixture を起動し、指定境界が sync されるまで待ちます。
+ */
 //------------------------------------------------------------------------------
 fn paused_child(test: &Case, mode: &str, checkpoint: &str, occurrence: usize) -> OwnedChild {
 	let log = File::create(test.path.join("child.log")).expect("child log");
@@ -313,6 +351,7 @@ fn paused_child(test: &Case, mode: &str, checkpoint: &str, occurrence: usize) ->
 		.expect("owned child");
 	let mut child = OwnedChild(child);
 	let started = Instant::now();
+	// 所有子が指定境界を永続化するまで待ち、期限で同期障害を検出する
 	while !test.path.join("paused").exists() {
 		assert!(
 			child.0.try_wait().expect("child status").is_none(),
@@ -329,17 +368,21 @@ fn paused_child(test: &Case, mode: &str, checkpoint: &str, occurrence: usize) ->
 }
 
 //------------------------------------------------------------------------------
-/** 子専用です。親から指定された自 case だけを変更し、通常の一括 test では実行しません。 */
+/**
+ * 子専用です。親から指定された自 case だけを変更し、通常の一括 test では実行しません。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "内部 QA の親が所有して起動する専用子"]
 fn internal_qa_child() {
 	let path = PathBuf::from(std::env::var_os("JTR_QA_CASE").expect("owned case"));
 	let mode = std::env::var("JTR_QA_MODE").expect("explicit mode");
+	// 復元系の子は先に適用し、指定境界へ進む前提状態を作る
 	if mode.starts_with("restore") {
 		let java = select_java(&root().join("Java"), &Cancellation::default()).expect("Java");
 		let mut options =
 			TransactionOptions::with_backup_root(path.join("backups")).expect("options");
+		// 復元 rollback の条件だけに明示失敗を加え、通常復元と分ける
 		if mode == "restore-rollback" {
 			options = options.with_failure(FailurePoint {
 				boundary: FailureBoundary::AfterRestore,
@@ -356,6 +399,7 @@ fn internal_qa_child() {
 			&Cancellation::default(),
 			|_| {},
 		);
+		// 復元 rollback と正常復元で、期待する返却状態を分けて検証する
 		if mode == "restore-rollback" {
 			assert_eq!(
 				result.expect_err("restore rollback child").state,
@@ -366,6 +410,7 @@ fn internal_qa_child() {
 		}
 	} else {
 		let test = Case::load(path);
+		// 適用 rollback の条件だけに途中置換の失敗を注入する
 		let options = if mode == "rollback" || mode == "recovery-required" {
 			test.options.clone().with_failure(FailurePoint {
 				boundary: FailureBoundary::AfterCommit,
@@ -374,6 +419,7 @@ fn internal_qa_child() {
 		} else {
 			test.options.clone()
 		};
+		// 要復旧の条件では rollback 自体にも失敗を加え、部分状態を再現する
 		let options = if mode == "recovery-required" {
 			options.with_failure(FailurePoint {
 				boundary: FailureBoundary::BeforeRollback,
@@ -383,11 +429,13 @@ fn internal_qa_child() {
 			options
 		};
 		let result = test.apply(&options);
+		// 要復旧と通常の適用・rollback を、対応する実行経路で検証する
 		if mode == "recovery-required" {
 			assert_eq!(
 				result.expect_err("failed rollback child").state,
 				TransactionState::RecoveryRequired
 			);
+		// 通常 rollback の条件では元状態へ戻れたことを確認する
 		} else if mode == "rollback" {
 			assert_eq!(
 				result.expect_err("rollback").state,
@@ -400,7 +448,9 @@ fn internal_qa_child() {
 }
 
 //------------------------------------------------------------------------------
-/** 実 kill 後の次回照合は既知状態だけを復旧し、未知 metadata では byte と証拠を保全します。 */
+/**
+ * 実 kill 後の次回照合は既知状態だけを復旧し、未知 metadata では byte と証拠を保全します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "明示 internal-qa 領域と実 Java が必要"]
@@ -442,16 +492,20 @@ fn kills_at_persistent_boundaries_and_recovers_from_actual_files() {
 		("restore-rollback", "journal-RestoreRolledBack", 1),
 		("recovery-required", "journal-RecoveryRequired", 1),
 	];
+	// 各永続化境界で所有子を順に実終了し、次回起動の復旧契約を確認する
 	for (index, (mode, boundary, occurrence)) in boundaries.iter().enumerate() {
 		verify_killed_boundary(index, mode, boundary, *occurrence);
 	}
 }
 
 //------------------------------------------------------------------------------
-/** 一つの永続化境界で所有子を実終了し、次回読込と復旧後の保全を確認します。 */
+/**
+ * 一つの永続化境界で所有子を実終了し、次回読込と復旧後の保全を確認します。
+ */
 //------------------------------------------------------------------------------
 fn verify_killed_boundary(index: usize, mode: &str, boundary: &str, occurrence: usize) {
 	let test = case(&format!("kill-{index:02}"));
+	// 復元系の kill 試験は、適用済みの独立 case から開始する
 	if mode.starts_with("restore") {
 		test.apply(&test.options).expect("preapply");
 	}
@@ -463,6 +517,7 @@ fn verify_killed_boundary(index: usize, mode: &str, boundary: &str, occurrence: 
 	assert_eq!(entries.len(), 1);
 	let id = &entries[0].transaction_id;
 	let inspected = inspect_transaction(&test.options, id).expect("next-run inspect");
+	// 初回 journal 前の境界では、未作成を実在する破断記録と混同しないことを確認する
 	if mode == "apply" && boundary == "manifest-verified" {
 		assert_eq!(inspected.state, HistoryState::Recoverable);
 		assert!(
@@ -484,6 +539,7 @@ fn verify_killed_boundary(index: usize, mode: &str, boundary: &str, occurrence: 
 		);
 	}
 	let before = test.hashes();
+	// manifest 前の kill は準備未完了として扱い、元対象が変化していないことを確認する
 	if inspected.state == HistoryState::IncompletePreparation {
 		test.assert_original();
 		assert!(
@@ -497,6 +553,7 @@ fn verify_killed_boundary(index: usize, mode: &str, boundary: &str, occurrence: 
 			)
 			.is_err()
 		);
+	// 未知 metadata の状態では、元 byte と証拠を保ったまま自動上書きを拒否することを確認する
 	} else if inspected.state == HistoryState::RecoveryRequired {
 		let error = recover_transaction(
 			&test.java,
@@ -544,6 +601,7 @@ fn verify_killed_boundary(index: usize, mode: &str, boundary: &str, occurrence: 
 			TransactionState::Restored | TransactionState::AlreadyRestored
 		));
 		test.assert_original();
+		// 初回 journal 前の実 kill では、復旧後の次適用と復元まで再利用を確認する
 		if mode == "apply" && boundary == "manifest-verified" {
 			assert_recovered_initial_journal_history(&test, id);
 		}
@@ -555,7 +613,9 @@ fn verify_killed_boundary(index: usize, mode: &str, boundary: &str, occurrence: 
 }
 
 //------------------------------------------------------------------------------
-/** 復旧完了の履歴を再読込し、次の適用・全件検証・復元が元 byte/metadata へ戻ることを確認。 */
+/**
+ * 復旧完了の履歴を再読込し、次の適用・全件検証・復元が元 byte/metadata へ戻ることを確認。
+ */
 //------------------------------------------------------------------------------
 fn assert_recovered_initial_journal_history(test: &Case, id: &str) {
 	let directory = test.options.backup_root().join(id);
@@ -585,6 +645,7 @@ fn assert_recovered_initial_journal_history(test: &Case, id: &str) {
 	.expect("restore after next apply");
 	test.assert_original();
 	assert!(!directory.join("journal.jsonl").exists());
+	// 次回の復元後も全履歴を再読込みし、復旧分岐を含め正常状態が残ることを確認する
 	for entry in list_history(&test.options).expect("history after next restore") {
 		assert_eq!(
 			entry.inspection.expect("both records readable").state,
@@ -597,7 +658,9 @@ fn assert_recovered_initial_journal_history(test: &Case, id: &str) {
 }
 
 //------------------------------------------------------------------------------
-/** 34境界と同じ実 kill を初回 journal 作成前だけに実行し、復旧後の再利用まで確認します。 */
+/**
+ * 34境界と同じ実 kill を初回 journal 作成前だけに実行し、復旧後の再利用まで確認します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "明示 internal-qa 領域と実 Java が必要"]
@@ -607,7 +670,9 @@ fn missing_initial_journal_recovers_and_allows_next_apply() {
 }
 
 //------------------------------------------------------------------------------
-/** 初回 journal の権限/共有失敗・不正内容と復旧連番の欠落を、未作成として許可しません。 */
+/**
+ * 初回 journal の権限/共有失敗・不正内容と復旧連番の欠落を、未作成として許可しません。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "明示 internal-qa 領域・実 Java と現利用者 SID が必要"]
@@ -735,24 +800,30 @@ fn journal_read_errors_and_missing_recovery_branch_are_rejected() {
 }
 
 //------------------------------------------------------------------------------
-/** OS の sharing failure と外部 rename は主原因を失わず、不明内容を上書きせず保全します。 */
+/**
+ * OS の sharing failure と外部 rename は主原因を失わず、不明内容を上書きせず保全します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "明示 internal-qa 領域と実 Java が必要"]
 fn actual_sharing_failure_and_external_rename_preserve_evidence() {
 	prepare_shared_java();
+	// sharing 拒否と外部 rename を、適用・復元の各該当条件で検証する
 	for (rename, restore) in [(false, false), (true, false), (true, true)] {
+		// 変更条件ごとに case 名を分け、異なる残存証拠を混在させない
 		let test = case(if rename {
 			"external-rename"
 		} else {
 			"sharing-violation"
 		});
+		// 復元系は先に正常適用し、同じ元状態から通常復元の失敗を再現する
 		if restore {
 			test.apply(&test.options)
 				.expect("apply before restore race");
 		}
 		let mut child = paused_child(
 			&test,
+			// 所有子の実行 mode を適用または復元の条件へ対応させる
 			if restore { "restore" } else { "apply" },
 			"before-replace",
 			1,
@@ -760,6 +831,7 @@ fn actual_sharing_failure_and_external_rename_preserve_evidence() {
 		let target = test.path.join("custom.jks");
 		let (before, _) = read_snapshot(&target, 32 * 1024 * 1024).expect("current snapshot");
 		let mut hold = None;
+		// 外部 rename は未知内容を作り、sharing 条件は保持 handle で実拒否を起こす
 		if rename {
 			fs::rename(&target, test.path.join("external-original.jks"))
 				.expect("external atomic rename despite old guard");
@@ -779,6 +851,7 @@ fn actual_sharing_failure_and_external_rename_preserve_evidence() {
 		}
 		fs::write(test.path.join("paused.release"), b"continue").expect("release");
 		let started = Instant::now();
+		// 所有子の終了まで確認し、60 秒の上限で回収の失敗を検出する
 		while child.0.try_wait().expect("status").is_none() {
 			assert!(started.elapsed() < Duration::from_secs(60));
 			std::thread::sleep(Duration::from_millis(20));
@@ -795,6 +868,7 @@ fn actual_sharing_failure_and_external_rename_preserve_evidence() {
 		);
 		let history = list_history(&test.options).expect("failure history");
 		let inspection = history[0].inspection.as_ref().expect("inspect failure");
+		// 未知の退避内容が残る条件では、次回復旧でも上書きを拒否して証拠を保持することを確認する
 		if rename {
 			assert_eq!(inspection.state, HistoryState::RecoveryRequired);
 			let recovery = fs::read_dir(&test.path)
@@ -847,7 +921,9 @@ fn actual_sharing_failure_and_external_rename_preserve_evidence() {
 }
 
 //------------------------------------------------------------------------------
-/** 自 fixture の外部更新が既存の時刻を保持する状況を再現します。権限・内容は変更しません。 */
+/**
+ * 自 fixture の外部更新が既存の時刻を保持する状況を再現します。権限・内容は変更しません。
+ */
 //------------------------------------------------------------------------------
 fn set_fixture_times(path: &Path, snapshot: &trust_repair_windows::FileSnapshot) {
 	use windows_sys::Win32::Foundation::FILETIME;
@@ -874,7 +950,9 @@ fn set_fixture_times(path: &Path, snapshot: &trust_repair_windows::FileSnapshot)
 }
 
 //------------------------------------------------------------------------------
-/** 不正 backup/manifest は既存試験に加え、保管 root の owner/DACL 範囲も強制緩和せず拒否します。 */
+/**
+ * 不正 backup/manifest は既存試験に加え、保管 root の owner/DACL 範囲も強制緩和せず拒否します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "明示 internal-qa 領域と実 Java が必要"]
@@ -900,7 +978,9 @@ fn refuses_widened_backup_directory_without_changing_targets() {
 }
 
 //------------------------------------------------------------------------------
-/** 自 fixture の DACL だけを設定します。通常権限を緩和する製品経路には使いません。 */
+/**
+ * 自 fixture の DACL だけを設定します。通常権限を緩和する製品経路には使いません。
+ */
 //------------------------------------------------------------------------------
 fn set_fixture_dacl(path: &Path, entries: &str) {
 	use std::os::windows::ffi::OsStrExt;
@@ -948,7 +1028,9 @@ fn set_fixture_dacl(path: &Path, entries: &str) {
 }
 
 //------------------------------------------------------------------------------
-/** 実権限拒否・複雑 ACE 拒否・保護 DACL の置換中断を隔離ファイルで確認します。 */
+/**
+ * 実権限拒否・複雑 ACE 拒否・保護 DACL の置換中断を隔離ファイルで確認します。
+ */
 //------------------------------------------------------------------------------
 #[test]
 #[ignore = "明示 QA root と現利用者 SID が必要"]
@@ -961,6 +1043,7 @@ fn real_permission_complex_acl_and_protected_dacl_contracts() {
 				.bytes()
 				.all(|byte| byte.is_ascii_digit() || byte == b'S' || byte == b'-')
 	);
+	// 実書込み拒否・複雑 ACE・保護 DACL を別 case に分けて検証する
 	for (label, prefix) in [
 		("denied-write", format!("(D;;0x2;;;{sid})")),
 		(
@@ -971,11 +1054,13 @@ fn real_permission_complex_acl_and_protected_dacl_contracts() {
 	] {
 		let initial = case(label);
 		let entries = format!("{prefix}(A;;FA;;;{sid})(A;;FA;;;BA)");
+		// 両形式へ同じ権限条件を設定し、一部の対象だけで合格としない
 		for name in ["custom.jks", "custom.p12"] {
 			set_fixture_dacl(&initial.path.join(name), &entries);
 		}
 		let test = Case::load(initial.path);
 		let before = test.hashes();
+		// 保護 DACL の条件では置換直後に所有子を実終了し、保持と次回復旧の契約を確認する
 		if label == "protected-dacl" {
 			let mut child = paused_child(&test, "apply", "after-replace", 1);
 			child.0.kill().expect("kill protected DACL case child");

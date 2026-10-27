@@ -3,7 +3,7 @@
  * - ファイル: inventory.rs
  * - 概要: keytool RFC 一覧を厳密に解析し、DER 全体から不変の inventory を作ります。
  * - バージョン: 01.00.00
- * - 作成日: 2026/10/26
+ * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
  *
@@ -20,7 +20,7 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/26  英語 RFC の構造・件数・証明書境界の検証を追加。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
  * ```
  *
  * 備考:
@@ -81,14 +81,18 @@ pub struct CertificateInventory {
 
 impl CertificateInventory {
 	//------------------------------------------------------------------------------
-	/** DER 全体のハッシュを返します。戻り値は `self` に借用されます。 */
+	/**
+	 * DER 全体のハッシュを返します。戻り値は `self` に借用されます。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn sha256(&self) -> &str {
 		&self.sha256
 	}
 
 	//------------------------------------------------------------------------------
-	/** 表示用 CN の一覧を返します。名称を削除条件には使用しません。 */
+	/**
+	 * 表示用 CN の一覧を返します。名称を削除条件には使用しません。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn common_names(&self) -> &[String] {
 		&self.common_names
@@ -108,21 +112,27 @@ pub struct EntryInventory {
 
 impl EntryInventory {
 	//------------------------------------------------------------------------------
-	/** 元の別名を返します。空白や Unicode を正規化しません。 */
+	/**
+	 * 元の別名を返します。空白や Unicode を正規化しません。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn alias(&self) -> &str {
 		&self.alias
 	}
 
 	//------------------------------------------------------------------------------
-	/** 鍵の混在判定に用いる種別を返します。 */
+	/**
+	 * 鍵の混在判定に用いる種別を返します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn kind(&self) -> EntryKind {
 		self.kind
 	}
 
 	//------------------------------------------------------------------------------
-	/** 証明書をチェーン順で返します。対称鍵は空の slice です。 */
+	/**
+	 * 証明書をチェーン順で返します。対称鍵は空の slice です。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn certificates(&self) -> &[CertificateInventory] {
 		&self.certificates
@@ -142,21 +152,27 @@ pub struct StoreInventory {
 
 impl StoreInventory {
 	//------------------------------------------------------------------------------
-	/** 形式を保持するための識別値を返します。 */
+	/**
+	 * 形式を保持するための識別値を返します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn format(&self) -> StoreFormat {
 		self.format
 	}
 
 	//------------------------------------------------------------------------------
-	/** 検査済み provider 名を返します。 */
+	/**
+	 * 検査済み provider 名を返します。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn provider(&self) -> &str {
 		&self.provider
 	}
 
 	//------------------------------------------------------------------------------
-	/** 重複しない全別名を返します。返す順序は一覧表示順に依存しません。 */
+	/**
+	 * 重複しない全別名を返します。返す順序は一覧表示順に依存しません。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn entries(&self) -> &[EntryInventory] {
 		&self.entries
@@ -187,7 +203,17 @@ pub struct InventoryError {
 
 impl fmt::Display for InventoryError {
 	//------------------------------------------------------------------------------
-	/** [`fmt::Display`] に従い、秘密や出力本文を含まない位置と理由を表示します。 */
+	/**
+	 * [`fmt::Display`] に従い、秘密や出力本文を含まない位置と理由を表示します。
+	 *
+	 * # Returns
+	 *
+	 * 出力先の書込みに成功すれば `Ok(())`。
+	 *
+	 * # Errors
+	 *
+	 * 出力先の `fmt::Error` を伝播します。途中までの出力は取り消しません。
+	 */
 	//------------------------------------------------------------------------------
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(formatter, "RFC 一覧の行 {}: {}", self.line, self.reason)
@@ -206,7 +232,17 @@ struct Lines<'a> {
 
 impl<'a> Lines<'a> {
 	//------------------------------------------------------------------------------
-	/** 次の非空行を返します。末尾では入力を含まない解析エラーを返します。 */
+	/**
+	 * 次の非空行を返します。末尾では入力を含まない解析エラーを返します。
+	 *
+	 * # Returns
+	 *
+	 * 空行を読み飛ばした次の行を入力から借用して返し、読み取り位置を一行進めます。
+	 *
+	 * # Errors
+	 *
+	 * 入力末尾の場合に、入力本文を含まない行位置付きエラーを返します。
+	 */
 	//------------------------------------------------------------------------------
 	fn take(&mut self) -> Result<&'a str, InventoryError> {
 		self.skip_blank();
@@ -220,7 +256,9 @@ impl<'a> Lines<'a> {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 空行のみを読み飛ばします。空白だけの行は未知構造として保持します。 */
+	/**
+	 * 空行のみを読み飛ばします。空白だけの行は未知構造として保持します。
+	 */
 	//------------------------------------------------------------------------------
 	fn skip_blank(&mut self) {
 		// 次の内容または末尾に達するまで、OpenJDK の改行差だけを吸収する
@@ -230,9 +268,21 @@ impl<'a> Lines<'a> {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 必須の固定行を消費します。不一致または末尾では失敗します。 */
+	/**
+	 * 必須の固定行を消費します。不一致または末尾では失敗します。
+	 *
+	 * # Arguments
+	 *
+	 * - `expected`: 次の非空行に要求する固定文字列。
+	 *
+	 * # Errors
+	 *
+	 * 次の行が存在しない、または固定文字列と一致しない場合に失敗します。
+	 * 読み取った行の位置は巻き戻しません。
+	 */
 	//------------------------------------------------------------------------------
 	fn expect(&mut self, expected: &str) -> Result<(), InventoryError> {
+		// 必須行を補正して受け入れず、構造が一致しなければ解析を止める
 		if self.take()? != expected {
 			return Err(self.error("未知の構造または境界"));
 		}
@@ -240,7 +290,22 @@ impl<'a> Lines<'a> {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 名前付き行の値を返します。prefix の欠落と空値は失敗します。 */
+	/**
+	 * 名前付き行の値を返します。prefix の欠落と空値は失敗します。
+	 *
+	 * # Arguments
+	 *
+	 * - `prefix`: 行頭に要求する項目名と区切り。
+	 *
+	 * # Returns
+	 *
+	 * 接頭辞を除いた非空の値を元の入力から借用して返します。
+	 *
+	 * # Errors
+	 *
+	 * 行の欠落、接頭辞の不一致、空の値の場合に失敗します。
+	 * 読み取った行の位置は巻き戻しません。
+	 */
 	//------------------------------------------------------------------------------
 	fn field(&mut self, prefix: &str) -> Result<&'a str, InventoryError> {
 		self.take()?
@@ -250,7 +315,13 @@ impl<'a> Lines<'a> {
 	}
 
 	//------------------------------------------------------------------------------
-	/** 直前の行位置と静的な理由だけを保持するエラーを作ります。 */
+	/**
+	 * 直前の行位置と静的な理由だけを保持するエラーを作ります。
+	 *
+	 * # Arguments
+	 *
+	 * - `reason`: 入力本文を含めない、固定された失敗理由。
+	 */
 	//------------------------------------------------------------------------------
 	fn error(&self, reason: &'static str) -> InventoryError {
 		InventoryError {
@@ -286,6 +357,7 @@ pub fn parse_keytool_rfc(input: &[u8]) -> Result<StoreInventory, InventoryError>
 		line: 0,
 		reason,
 	};
+	// 外部出力の容量を先に制限し、過大な入力を行分割へ渡さない
 	if input.len() > MAX_INPUT_BYTES {
 		return Err(InventoryError {
 			code: InventoryErrorCode::InputLimit,
@@ -310,6 +382,7 @@ pub fn parse_keytool_rfc(input: &[u8]) -> Result<StoreInventory, InventoryError>
 		.map(|line| line.strip_suffix('\r').unwrap_or(line))
 		.take(MAX_LINES + 1)
 		.collect();
+	// 改行構造と行ごとの上限を確認し、不完全な解析を成功へ変換しない
 	if values.len() > MAX_LINES
 		|| values
 			.iter()
@@ -318,12 +391,14 @@ pub fn parse_keytool_rfc(input: &[u8]) -> Result<StoreInventory, InventoryError>
 		return Err(invalid("不正な行境界または行長"));
 	}
 	let mut lines = Lines { values, next: 0 };
+	// 対応する二形式だけを受理し、未知形式を既知形式へ推測しない
 	let format = match lines.field("Keystore type: ")? {
 		"JKS" => StoreFormat::Jks,
 		"PKCS12" => StoreFormat::Pkcs12,
 		_ => return Err(lines.error("非対応のストア形式")),
 	};
 	let provider = lines.field("Keystore provider: ")?;
+	// 既知の provider 以外は出力構造の保証対象に含めない
 	if provider != "SUN" {
 		return Err(lines.error("非対応の provider"));
 	}
@@ -337,6 +412,7 @@ pub fn parse_keytool_rfc(input: &[u8]) -> Result<StoreInventory, InventoryError>
 		})
 		.ok_or(lines.error("件数行が不正"))?;
 	let count = parse_count(count_text).ok_or(lines.error("件数が不正"))?;
+	// 宣言件数と単複形を整合させ、後続の反復範囲を確定する
 	if count > MAX_ENTRIES || (count == 1) != count_line.ends_with(" entry") {
 		return Err(lines.error("件数の範囲または単複が不正"));
 	}
@@ -345,20 +421,24 @@ pub fn parse_keytool_rfc(input: &[u8]) -> Result<StoreInventory, InventoryError>
 	// 宣言件数だけ完全なエントリを読み、少ない場合も余剰の場合も拒否する
 	for _ in 0..count {
 		let alias = lines.field("Alias name: ")?.to_owned();
+		// 過大な別名と大小文字だけ異なる重複を拒否し、一意の対象を保つ
 		if alias.len() > 4096 || !aliases.insert(alias.to_lowercase()) {
 			return Err(lines.error("別名が重複または長すぎる"));
 		}
 		// 日付は識別情報に使わないが、必須行と表示文字列の条件は維持する
 		let date = lines.field("Creation date: ")?;
+		// 日付行の余分な空白を暗黙に補正せず、既知の出力構造だけを受理する
 		if date.trim() != date {
 			return Err(lines.error("日付行が不正"));
 		}
+		// 鍵の種類を保持し、証明書だけのエントリと混同しない
 		let kind = match lines.field("Entry type: ")? {
 			"trustedCertEntry" => EntryKind::TrustedCertificate,
 			"PrivateKeyEntry" => EntryKind::PrivateKey,
 			"SecretKeyEntry" => EntryKind::SecretKey,
 			_ => return Err(lines.error("未知のエントリ種別")),
 		};
+		// エントリ種別に応じた証明書数を確定し、チェーンを省略しない
 		let chain_length = match kind {
 			EntryKind::TrustedCertificate => 1,
 			EntryKind::PrivateKey => parse_count(lines.field("Certificate chain length: ")?)
@@ -369,6 +449,7 @@ pub fn parse_keytool_rfc(input: &[u8]) -> Result<StoreInventory, InventoryError>
 		let mut certificates = Vec::with_capacity(chain_length);
 		// 秘密鍵チェーンは Certificate[n] も順序と件数を照合する
 		for index in 0..chain_length {
+			// 秘密鍵では宣言された順番の証明書だけを取り込み、途中欠落を検出する
 			if kind == EntryKind::PrivateKey {
 				lines.expect(&format!("Certificate[{}]:", index + 1))?;
 			}
@@ -383,6 +464,7 @@ pub fn parse_keytool_rfc(input: &[u8]) -> Result<StoreInventory, InventoryError>
 		});
 	}
 	lines.skip_blank();
+	// 宣言件数の後に残る未知行を捨てず、全体を不完全な出力として拒否する
 	if lines.next != lines.values.len() {
 		return Err(lines.error("宣言件数後の未知出力"));
 	}
@@ -395,9 +477,16 @@ pub fn parse_keytool_rfc(input: &[u8]) -> Result<StoreInventory, InventoryError>
 }
 
 //------------------------------------------------------------------------------
-/** ASCII 十進数だけを受理します。空・符号・overflow・空白では `None` を返します。 */
+/**
+ * ASCII 十進数だけを受理します。空・符号・overflow・空白では `None` を返します。
+ *
+ * # Returns
+ *
+ * 全体が ASCII 十進数字で `usize` に収まる場合は値、それ以外は `None`。
+ */
 //------------------------------------------------------------------------------
 fn parse_count(input: &str) -> Option<usize> {
+	// 符号や空白を数値へ補正せず、ASCII 数字列だけを後段へ渡す
 	if input.is_empty() || !input.bytes().all(|byte| byte.is_ascii_digit()) {
 		return None;
 	}
@@ -408,6 +497,19 @@ fn parse_count(input: &str) -> Option<usize> {
 /**
  * PEM 一つを DER へ復号し、全 byte の SHA-256 と subject CN を取得します。
  * 不正 PEM/DER、DER 後の余剰 byte、表示できない CN では失敗します。
+ *
+ * # Arguments
+ *
+ * - `lines`: BEGIN 行から読み進める解析位置。成功時は END 行まで消費します。
+ *
+ * # Returns
+ *
+ * DER 全体のハッシュと、復号した subject CN の一覧。
+ *
+ * # Errors
+ *
+ * PEM 境界・Base64・X.509 DER・CN の不正、または DER の余剰 byte で失敗します。
+ * 失敗時も読み取り位置は巻き戻さず、不完全な証明書を返しません。
  */
 //------------------------------------------------------------------------------
 fn parse_certificate(lines: &mut Lines<'_>) -> Result<CertificateInventory, InventoryError> {
@@ -421,9 +523,11 @@ fn parse_certificate(lines: &mut Lines<'_>) -> Result<CertificateInventory, Inve
 			.copied()
 			.ok_or(lines.error("PEM 終端の欠落"))?;
 		lines.next += 1;
+		// 対応する END 行へ到達した時点で、一証明書分の収集を終える
 		if line == "-----END CERTIFICATE-----" {
 			break;
 		}
+		// 入れ子や未知行を Base64 の一部として読み飛ばさない
 		if line.is_empty()
 			|| line.len() > 76
 			|| !line
@@ -439,6 +543,7 @@ fn parse_certificate(lines: &mut Lines<'_>) -> Result<CertificateInventory, Inve
 		.map_err(|_| lines.error("不正な Base64"))?;
 	let (remaining, certificate) =
 		X509Certificate::from_der(&der).map_err(|_| lines.error("不正な X.509 DER"))?;
+	// 一証明書の後に余分な DER がある場合、全 byte を識別できたと扱わない
 	if !remaining.is_empty() {
 		return Err(lines.error("DER 後の余剰 byte"));
 	}
@@ -451,14 +556,30 @@ fn parse_certificate(lines: &mut Lines<'_>) -> Result<CertificateInventory, Inve
 }
 
 //------------------------------------------------------------------------------
-/** CN の型を UTF8/Printable/IA5/Numeric 等または BMP に限定して復号します。 */
+/**
+ * CN の型を UTF8/Printable/IA5/Numeric 等または BMP に限定して復号します。
+ *
+ * # Arguments
+ *
+ * - `subject`: 解析済み X.509 証明書の subject。
+ *
+ * # Returns
+ *
+ * subject に現れる順序の CN。一つもない場合は空の一覧。
+ *
+ * # Errors
+ *
+ * CN の ASN.1 型・文字コード・長さ、または表示用文字の条件に不整合があれば `Err(())`。
+ */
 //------------------------------------------------------------------------------
 fn common_names(subject: &X509Name<'_>) -> Result<Vec<String>, ()> {
 	let mut names = Vec::new();
 	// subject の CN 属性をすべて列挙し、型を推測せず失敗を伝播する
 	for attribute in subject.iter_common_name() {
 		let value = attribute.attr_value();
+		// BMPString は UTF-16 BE として読み、他の既知文字列型とは復号方法を分ける
 		let name = if value.tag().0 == 30 {
+			// 不完全な UTF-16 code unit を補正して表示名を作らない
 			if value.data.len() % 2 != 0 {
 				return Err(());
 			}
@@ -473,6 +594,7 @@ fn common_names(subject: &X509Name<'_>) -> Result<Vec<String>, ()> {
 		} else {
 			attribute.as_str().map_err(|_| ())?.to_owned()
 		};
+		// 表示を崩す CN を記録へ持ち込まず、空や過大な名称も拒否する
 		if name.is_empty() || name.len() > 4096 || name.chars().any(is_unsafe_character) {
 			return Err(());
 		}
@@ -482,14 +604,22 @@ fn common_names(subject: &X509Name<'_>) -> Result<Vec<String>, ()> {
 }
 
 //------------------------------------------------------------------------------
-/** 任意 byte 列の SHA-256 を大文字 ASCII 十六進数 64 桁で返します。副作用はありません。 */
+/**
+ * 任意 byte 列の SHA-256 を大文字 ASCII 十六進数 64 桁で返します。副作用はありません。
+ */
 //------------------------------------------------------------------------------
 pub fn sha256_hex(input: &[u8]) -> String {
 	format!("{:X}", Sha256::digest(input))
 }
 
 //------------------------------------------------------------------------------
-/** ログ/表示の構造を変える制御文字と双方向表示の制御を判定します。 */
+/**
+ * ログ/表示の構造を変える制御文字と双方向表示の制御を判定します。
+ *
+ * # Returns
+ *
+ * 制御文字または表示方向を操作する文字なら `true`、通常の表示文字なら `false`。
+ */
 //------------------------------------------------------------------------------
 fn is_unsafe_character(value: char) -> bool {
 	value.is_control()

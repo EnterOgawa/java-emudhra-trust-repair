@@ -2,28 +2,30 @@
 /*!
  * - ファイル: qa.rs
  * - 概要: 明示 feature と引数でだけ有効な native 描画・隔離 fixture の縦経路 QA です。
- * - バージョン: 01.04.02
- * - 作成日: 2026/10/26
+ * - バージョン: 01.00.00
+ * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
  *
- * ライセンス: SPDX-License-Identifier: Apache-2.0
- * Apache License, Version 2.0。全文はルートの LICENSE を参照してください。
+ * ライセンス:
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ * 本ファイルには Apache License, Version 2.0 が適用されます。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
  *
  * 更新履歴:
+ *
  * ```text
- * Ver.01.00.00  Shunji Ogawa  2026/10/26  自アプリ screenshot と同じ UI action/worker の隔離 QA を追加。
- * Ver.01.01.00  Shunji Ogawa  2026/10/26  別の内部 QA 領域で未完了復旧・確定中 close・切断を検証。
- * Ver.01.02.00  Shunji Ogawa  2026/10/26  新規隔離領域で簡素化GUIの一操作・復元・無変更を検証。
- * Ver.01.03.00  Shunji Ogawa  2026/10/26  別の新規fixtureで自動状態と非消費入力・世代拒否を検証。
- * Ver.01.04.00  Shunji Ogawa  2026/10/26  Java内backupの確認/復元と従来rootの不使用を新規領域で検証。
- * Ver.01.04.01  Shunji Ogawa  2026/10/26  新規classic-ui領域でfont出典・等倍/拡大・小型画面を記録。
- * Ver.01.04.02  Shunji Ogawa  2026/10/26  新規settings-layout領域で結果と設定の分離・入力欄を記録。
+ * VerNo.        author        update      comment
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
  * ```
  *
- * 備考: 通常起動では動作しません。既存 GUI 証拠と内部 QA の新規コピーを分離します。
+ * 備考:
+ *
+ * 通常起動では動作しません。既存 GUI 証拠と内部 QA の新規コピーを分離します。
  */
 //------------------------------------------------------------------------------
 
@@ -77,9 +79,20 @@ pub struct Preview {
 }
 impl Preview {
 	//------------------------------------------------------------------------------
-	/** 既知QA引数一つだけを受け入れます。空引数は通常OS言語のまま起動します。 */
+	/**
+	 * 既知QA引数一つだけを受け入れます。空引数は通常OS言語のまま起動します。
+	 *
+	 * # Returns
+	 *
+	 * 引数なしなら `None`、既知の明示引数一つなら対応する QA 状態。
+	 *
+	 * # Errors
+	 *
+	 * 引数の件数または内容が既知一覧に一致しない場合に InvalidInput。
+	 */
 	//------------------------------------------------------------------------------
 	pub fn from_arguments(arguments: &[OsString]) -> Result<Option<Self>, std::io::Error> {
+		// 引数のない通常起動では、QA 状態を生成しない
 		if arguments.is_empty() {
 			return Ok(None);
 		}
@@ -87,6 +100,7 @@ impl Preview {
 			.first()
 			.and_then(|value| value.to_str())
 			.unwrap_or("");
+		// 既知の明示引数一つだけを許可し、未知の試験操作を開始しない
 		if arguments.len() != 1
 			|| ![
 				"--preview-simple-ja",
@@ -114,6 +128,7 @@ impl Preview {
 				"Unknown explicit QA arguments",
 			));
 		}
+		// 明示引数から表示試験の言語を選び、OS の設定自体は変更しない
 		let language = if value.ends_with("en") {
 			Language::English
 		} else {
@@ -125,6 +140,7 @@ impl Preview {
 			.trim_start_matches("--preview-simple-")
 			.trim_start_matches("--qa-simple-")
 			.trim_start_matches("--qa-auto-");
+		// 描画だけの preview と動作 QA で、専用記録先の名前を分ける
 		let folder = if preview_only {
 			format!("preview-{folder}")
 		} else {
@@ -143,6 +159,7 @@ impl Preview {
 			permission: value.contains("permission"),
 			disconnect: value.ends_with("disconnect"),
 			root: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+				// 自動状態確認と通常操作の QA を、それぞれの専用領域へ限定する
 				.join(if auto_status {
 					"../../artifacts/settings-layout/gui-auto-status"
 				} else {
@@ -156,21 +173,40 @@ impl Preview {
 			progress_captured: false,
 		}))
 	}
+
 	//------------------------------------------------------------------------------
-	/** 初期画面と処理後のQAで、設定を閉じた処理結果のnative描画を確認します。 */
+	/**
+	 * 初期画面と処理後のQAで、設定を閉じた処理結果のnative描画を確認します。
+	 */
 	//------------------------------------------------------------------------------
 	pub(super) fn shows_results(&self) -> bool {
 		(self.preview_only && matches!(self.stage, 100 | 101))
 			|| (!self.preview_only && matches!(self.stage, 90 | 91))
 	}
+
 	//------------------------------------------------------------------------------
-	/** 結果確認の後でだけ特殊設定を開き、有効な入力欄を描画します。 */
+	/**
+	 * 結果確認の後でだけ特殊設定を開き、有効な入力欄を描画します。
+	 */
 	//------------------------------------------------------------------------------
 	pub(super) fn shows_settings(&self) -> bool {
 		self.preview_only && matches!(self.stage, 102..=105)
 	}
+
 	//------------------------------------------------------------------------------
-	/** 自アプリの実描画だけをPNGへ保存します。独立threadの完了をchannelで受け取ります。 */
+	/**
+	 * 自アプリの実描画だけをPNGへ保存します。独立threadの完了をchannelで受け取ります。
+	 *
+	 * # Arguments
+	 *
+	 * - `context`: このアプリの描画画像を要求する context。
+	 * - `name`: QA root 内の PNG ファイル名の基部。
+	 *
+	 * # Notes
+	 *
+	 * 画像保存 thread の結果を channel に保持し、後続 qa_tick が完了を確認します。
+	 * この関数自体は保存完了を待たず、保存の成否も同期的には返しません。
+	 */
 	//------------------------------------------------------------------------------
 	fn screenshot(&mut self, context: &egui::Context, name: &str) {
 		let path = self.root.join(format!("{name}.png"));
@@ -196,8 +232,11 @@ impl Preview {
 			});
 		});
 	}
+
 	//------------------------------------------------------------------------------
-	/** 実callbackの中断可否を証跡へ記録します。状態判定に自由文は使いません。 */
+	/**
+	 * 実callbackの中断可否を証跡へ記録します。状態判定に自由文は使いません。
+	 */
 	//------------------------------------------------------------------------------
 	pub(super) fn progress(&mut self, value: trust_repair_windows::TransactionProgress) {
 		self.log.push(format!(
@@ -206,14 +245,32 @@ impl Preview {
 		));
 	}
 }
+
 //------------------------------------------------------------------------------
-/** 明示QAだけを新規領域へ向けます。通常の既存candidateやuser windowにアクセスしません。 */
+/**
+ * 明示QAだけを新規領域へ向けます。通常の既存candidateやuser windowにアクセスしません。
+ *
+ * # Arguments
+ *
+ * - `app`: QA 設定を反映して返す、まだ I/O を始めていない画面状態。
+ * - `preview`: 明示 QA がなければ `None`。
+ * - `font_source`: 実採用した font の出所。QA の log へだけ記録します。
+ *
+ * # Returns
+ *
+ * 通常状態、または専用 fixture と採用言語を設定した画面状態。
+ *
+ * # Errors
+ *
+ * QA root の作成・正規化、保存先設定、または必要な fixture 不足。
+ */
 //------------------------------------------------------------------------------
 pub fn configure(
 	mut app: TrustRepairApp,
 	preview: Option<Preview>,
 	font_source: String,
 ) -> Result<TrustRepairApp, Box<dyn std::error::Error + Send + Sync>> {
+	// 明示 QA がなければ、通常の画面状態をそのまま返す
 	let Some(mut preview) = preview else {
 		return Ok(app);
 	};
@@ -222,12 +279,15 @@ pub fn configure(
 	preview.log.push(format!("runtime UI font: {font_source}"));
 	app.language = preview.language;
 	app.legacy_options = TransactionOptions::with_backup_root(preview.root.join("legacy-backups"))?;
+	// 変更を伴う QA だけに fixture 入力を設定し、preview と切断試験を分ける
 	if !preview.preview_only && !preview.disconnect {
 		let java = preview.root.join("Java");
+		// 必要な隔離 Java が準備されていない場合は、実環境へ fallback せず失敗させる
 		if !java.join("bin/java.exe").is_file() {
 			return Err("Prepare new gui-simple fixture first".into());
 		}
 		app.root_text = java.display().to_string();
+		// 両形式の custom を明示入力へ加え、標準ストア以外も同じ操作で検証する
 		for name in ["custom.jks", "custom.p12"] {
 			app.custom.push(StoreInput {
 				path: preview.root.join(name),
@@ -237,17 +297,21 @@ pub fn configure(
 				},
 			});
 		}
+		// 認証失敗試験だけに非秘密の誤入力を設定する
 		if preview.failure {
 			app.custom[0].password.standard = false;
 			*app.custom[0].password.value = "deliberately-wrong-test-password".to_owned();
 		}
+		// 自動確認では custom 入力を保持する契約も検証するため、手入力 mode を使う
 		if preview.auto_status && !preview.failure {
 			app.custom[0].password.standard = false;
 			*app.custom[0].password.value = "changeit".to_owned();
 		}
+		// 不正フォルダ試験だけで、所有領域の存在しない Java を選択する
 		if preview.invalid_folder {
 			app.root_text = preview.root.join("missing-Java").display().to_string();
 		}
+		// 自動状態確認の QA だけを即時予約し、通常操作とは開始契機を分ける
 		if preview.auto_status {
 			app.invalidate();
 			app.auto_due = Some(Instant::now());
@@ -258,10 +322,13 @@ pub fn configure(
 }
 impl TrustRepairApp {
 	//------------------------------------------------------------------------------
-	/** 自分の新規fixtureだけで通常の選択・自動Scan・無効化・復元actionを検証します。 */
+	/**
+	 * 自分の新規fixtureだけで通常の選択・自動Scan・無効化・復元actionを検証します。
+	 */
 	//------------------------------------------------------------------------------
 	fn qa_auto_step(&mut self, qa: &mut Preview, context: &egui::Context) {
 		let idle = self.worker.is_none();
+		// 所有する QA の段階と worker の完了を基準に、検証・撮影・次操作を順に進める
 		match qa.stage {
 			0 if qa.switch_folder && self.automatic_generation.is_some() => {
 				self.root_text = qa.root.join("new-missing-Java").display().to_string();
@@ -272,6 +339,7 @@ impl TrustRepairApp {
 				qa.stage = 1;
 			}
 			0 | 1 if idle && self.auto_due.is_none() => {
+				// 認証失敗・存在しない入力・切替後の古い世代を、無効化済みと表示しないことを確認する
 				if qa.failure || qa.invalid_folder || qa.switch_folder {
 					assert!(self.current_status == CurrentStatus::Unavailable);
 					assert!(self.outcome.is_none());
@@ -289,6 +357,7 @@ impl TrustRepairApp {
 							.to_owned(),
 					);
 					qa.screenshot(context, "targets-remain");
+					// 読み取りだけの試験ではここで完了し、変更試験だけ次の適用へ進める
 					qa.stage = if qa.readonly { 90 } else { 2 };
 				}
 			}
@@ -378,15 +447,21 @@ impl TrustRepairApp {
 			_ => {}
 		}
 	}
+
 	//------------------------------------------------------------------------------
-	/** 通常と同じ確認後action・復元ボタンを逐次呼びます。自動確認は明示QAに限ります。 */
+	/**
+	 * 通常と同じ確認後action・復元ボタンを逐次呼びます。自動確認は明示QAに限ります。
+	 */
 	//------------------------------------------------------------------------------
 	pub(super) fn qa_tick(&mut self, context: &egui::Context) {
+		// 明示 QA の状態がないフレームでは、試験操作を行わない
 		let Some(mut qa) = self.qa.take() else {
 			return;
 		};
 		context.request_repaint_after(Duration::from_millis(80));
+		// 画像保存の結果が届くまでは状態を保持し、同じ画像要求を重ねない
 		if let Some(receiver) = &qa.capture {
+			// 保存成功・失敗・未完了を分け、失敗時は証跡を残して終了段階へ進む
 			match receiver.try_recv() {
 				Ok(Ok(())) => qa.capture = None,
 				Ok(Err(error)) => {
@@ -400,29 +475,36 @@ impl TrustRepairApp {
 				}
 			}
 		}
+		// 段階間の期限までは状態を戻し、UI thread を待機させない
 		if Instant::now() < qa.after {
 			self.qa = Some(qa);
 			return;
 		}
 		let idle = self.worker.is_none();
+		// 自動状態確認の QA は専用の状態機械へ渡し、通常操作の段階と混在させない
 		if qa.auto_status {
 			self.qa_auto_step(&mut qa, context);
 			qa.after = Instant::now() + Duration::from_millis(250);
 			self.qa = Some(qa);
 			return;
 		}
+		// 実行中の進捗は一度だけ撮影し、worker の完了前後を取り違えない
 		if qa.stage == 3 && !idle && !qa.progress_captured {
 			qa.progress_captured = true;
 			qa.screenshot(context, "progress");
 			self.qa = Some(qa);
 			return;
 		}
+		// 通常と同じ確認・適用・復元の順序を、明示した試験条件で進める
 		match qa.stage {
 			0 if idle => {
+				// preview は描画、切断試験は通知欠落、通常 QA は確認画面から開始する
 				if qa.preview_only {
 					qa.screenshot(context, "initial");
 					qa.stage = 92;
-				} else if qa.disconnect {
+				}
+				// 切断 QA では Done のない終了を再現し、通常操作の確認へ進めない
+				else if qa.disconnect {
 					self.launch(Command::QaDisconnect, context);
 					qa.stage = 81;
 				} else {
@@ -469,9 +551,12 @@ impl TrustRepairApp {
 				qa.stage = 3;
 			}
 			3 if (qa.cancel || qa.close) && !idle => {
+				// close 試験は通常の close 要求、中断試験は所有 worker の cancel で再現する
 				if qa.close {
 					context.send_viewport_cmd(egui::ViewportCommand::Close);
-				} else if let Some(worker) = &self.worker {
+				}
+				// close 試験以外では所有 worker に中断を要求し、通常の安全な回収を検証する
+				else if let Some(worker) = &self.worker {
 					worker.cancellation.cancel();
 				}
 				qa.stage = 80;
@@ -640,10 +725,14 @@ impl TrustRepairApp {
 		qa.after = Instant::now() + Duration::from_millis(450);
 		self.qa = Some(qa);
 	}
+
 	//------------------------------------------------------------------------------
-	/** 所有したQA processの終了結果だけを専用領域へ記録します。 */
+	/**
+	 * 所有したQA processの終了結果だけを専用領域へ記録します。
+	 */
 	//------------------------------------------------------------------------------
 	pub(super) fn qa_exit_log(&mut self) {
+		// このアプリが所有した QA だけに、終了時の回収結果を記録する
 		if let Some(qa) = &mut self.qa {
 			qa.log.push(format!(
 				"exit: worker_reaped={}; closing={}; close_ready={}",
@@ -651,6 +740,7 @@ impl TrustRepairApp {
 				self.closing,
 				self.close_ready
 			));
+			// 終了 log の保存失敗は標準 error へ残し、成功した記録として扱わない
 			if let Err(error) = std::fs::write(qa.root.join("qa.log"), qa.log.join("\n")) {
 				eprintln!("QA log write failed: {error}");
 			}

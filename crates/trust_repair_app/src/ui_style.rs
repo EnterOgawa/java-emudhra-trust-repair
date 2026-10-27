@@ -3,21 +3,29 @@
  * - ファイル: ui_style.rs
  * - 概要: OSのMSゴシックと従来のWindowsダイアログ風の表示を設定します。
  * - バージョン: 01.00.00
- * - 作成日: 2026/10/26
+ * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
  *
- * ライセンス: SPDX-License-Identifier: Apache-2.0
- * Apache License, Version 2.0。全文はルートの LICENSE を参照してください。
+ * ライセンス:
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ * 本ファイルには Apache License, Version 2.0 が適用されます。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
  *
  * 更新履歴:
+ *
  * ```text
- * Ver.01.00.00  Shunji Ogawa  2026/10/26  MS Gothicのface照合とfallback、四角い小型の表示を追加。
+ * VerNo.        author        update      comment
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
  * ```
  *
- * 備考: MSフォントはOSから読むだけです。埋込み・保存・再配布しません。
+ * 備考:
+ *
+ * MSフォントはOSから読むだけです。埋込み・保存・再配布しません。
  */
 //------------------------------------------------------------------------------
 
@@ -27,6 +35,7 @@ use std::path::PathBuf;
 
 // MS Gothicにない文字と未搭載時の表示を保証する既存のOFL資材
 pub(super) const JAPANESE_FONT: &[u8] = include_bytes!("../../../assets/NotoSansJP.ttf");
+// 比例幅の別 family を選ばないため、厳密照合する family 名を固定する
 const MS_GOTHIC: &str = "MS Gothic";
 
 /// 設定するフォント群と、実行時に選んだ出典です。元fontのbyteを保存しません。
@@ -38,7 +47,13 @@ pub(super) struct UiFonts {
 }
 
 //------------------------------------------------------------------------------
-/** TTCを含むfontのfamily名を厳密照合し、MS PGothic/MS UI Gothicを選ばずface番号を返します。 */
+/**
+ * TTCを含むfontのfamily名を厳密照合し、MS PGothic/MS UI Gothicを選ばずface番号を返します。
+ *
+ * # Returns
+ *
+ * family が MS Gothic と一致した face 番号。不正 font または該当なしなら `None`。
+ */
 //------------------------------------------------------------------------------
 fn ms_gothic_face(bytes: &[u8]) -> Option<u32> {
 	FileRef::new(bytes)
@@ -54,7 +69,17 @@ fn ms_gothic_face(bytes: &[u8]) -> Option<u32> {
 }
 
 //------------------------------------------------------------------------------
-/** 読み取り済みOS fontだけを優先登録します。欠落・破損・別familyは既存Notoへ戻します。 */
+/**
+ * 読み取り済みOS fontだけを優先登録します。欠落・破損・別familyは既存Notoへ戻します。
+ *
+ * # Arguments
+ *
+ * - `system`: OS font のパスと読込み済み byte 列。`None` は埋込み font のみを使います。
+ *
+ * # Returns
+ *
+ * 利用可能なフォント定義と採用元の説明。OS font が使えなければ Noto を先頭にします。
+ */
 //------------------------------------------------------------------------------
 fn fonts_with_system(system: Option<(PathBuf, Vec<u8>)>) -> UiFonts {
 	let mut definitions = egui::FontDefinitions::default();
@@ -64,6 +89,7 @@ fn fonts_with_system(system: Option<(PathBuf, Vec<u8>)>) -> UiFonts {
 	definitions
 		.font_data
 		.insert("Noto Sans JP".to_owned(), japanese.into());
+	// 本文と等幅の両 family に同じ埋込み fallback を登録する
 	for family in [FontFamily::Proportional, FontFamily::Monospace] {
 		definitions
 			.families
@@ -72,6 +98,7 @@ fn fonts_with_system(system: Option<(PathBuf, Vec<u8>)>) -> UiFonts {
 			.insert(0, "Noto Sans JP".to_owned());
 	}
 	let mut source = "Noto Sans JP; embedded OFL fallback; face=0".to_owned();
+	// 読めた OS font の family が厳密一致する場合だけ、MS Gothic を優先する
 	if let Some((path, bytes)) = system
 		&& let Some(index) = ms_gothic_face(&bytes)
 	{
@@ -80,6 +107,7 @@ fn fonts_with_system(system: Option<(PathBuf, Vec<u8>)>) -> UiFonts {
 		definitions
 			.font_data
 			.insert(MS_GOTHIC.to_owned(), data.into());
+		// 両 family の先頭へ同じ OS face を入れ、表示箇所ごとの font 差を抑える
 		for family in [FontFamily::Proportional, FontFamily::Monospace] {
 			definitions
 				.families
@@ -99,7 +127,13 @@ fn fonts_with_system(system: Option<(PathBuf, Vec<u8>)>) -> UiFonts {
 }
 
 //------------------------------------------------------------------------------
-/** OSのWindowsディレクトリからmsgothic.ttcを読むだけで、失敗時も起動可能な定義を返します。 */
+/**
+ * OSのWindowsディレクトリからmsgothic.ttcを読むだけで、失敗時も起動可能な定義を返します。
+ *
+ * # Returns
+ *
+ * OS font の取得に失敗しても使用できる、埋込み fallback を含む定義と採用元。
+ */
 //------------------------------------------------------------------------------
 pub(super) fn fonts() -> UiFonts {
 	let system = trust_repair_windows::windows_fonts_directory()
@@ -109,7 +143,17 @@ pub(super) fn fonts() -> UiFonts {
 }
 
 //------------------------------------------------------------------------------
-/** 同じeframe画面の本文・入力・ボタン・詳細・modalに、灰色背景と四角い細枠を適用します。 */
+/**
+ * 同じeframe画面の本文・入力・ボタン・詳細・modalに、灰色背景と四角い細枠を適用します。
+ *
+ * # Arguments
+ *
+ * - `context`: font と表示寸法・色を設定する対象画面。
+ *
+ * # Returns
+ *
+ * 実際に採用した font の出所。通常表示には使わず QA の記録へ渡せます。
+ */
 //------------------------------------------------------------------------------
 pub(super) fn configure(context: &egui::Context) -> String {
 	let fonts = fonts();
@@ -117,6 +161,7 @@ pub(super) fn configure(context: &egui::Context) -> String {
 	context.set_theme(egui::Theme::Light);
 	context.set_visuals(egui::Visuals::light());
 	context.style_mut_of(egui::Theme::Light, |style| {
+		// 本文・button・等幅の基本寸法を揃え、小型の Windows 表示へ合わせる
 		for text_style in [
 			egui::TextStyle::Body,
 			egui::TextStyle::Button,
@@ -154,6 +199,7 @@ pub(super) fn configure(context: &egui::Context) -> String {
 		visuals.interact_cursor = None;
 		visuals.selection.bg_fill = Color32::from_rgb(204, 228, 247);
 		visuals.selection.stroke = Stroke::new(1.0, Color32::from_rgb(0, 90, 158));
+		// 全 widget 状態へ同じ角と細枠の規則を適用し、状態による形状の飛びを抑える
 		for widget in [
 			&mut visuals.widgets.noninteractive,
 			&mut visuals.widgets.inactive,
@@ -180,12 +226,22 @@ pub(super) fn configure(context: &egui::Context) -> String {
 }
 
 //------------------------------------------------------------------------------
-/** 既存widgetの意味とhit領域を変えず、内側の明暗線だけで立体枠を描きます。 */
+/**
+ * 既存widgetの意味とhit領域を変えず、内側の明暗線だけで立体枠を描きます。
+ *
+ * # Arguments
+ *
+ * - `ui`: 枠線を描画する標準 widget と同じ UI。
+ * - `response`: 枠の矩形・有効状態・focus を取得する元 widget の応答。
+ * - `sunken`: `true` は押し込み、`false` は盛り上がる明暗の順序。
+ */
 //------------------------------------------------------------------------------
 fn bevel(ui: &egui::Ui, response: &egui::Response, sunken: bool) {
 	let rect = response.rect.shrink(0.5);
 	let light = Color32::WHITE;
+	// 無効 widget の明暗を弱め、操作できる状態と見分けられるようにする
 	let dark = Color32::from_gray(if response.enabled() { 110 } else { 170 });
+	// 押し込み状態だけは明暗の辺を反転し、元 widget の応答を描画へ反映する
 	let (leading, trailing) = if sunken { (dark, light) } else { (light, dark) };
 	ui.painter().line_segment(
 		[rect.left_bottom(), rect.left_top()],
@@ -206,13 +262,20 @@ fn bevel(ui: &egui::Ui, response: &egui::Response, sunken: bool) {
 }
 
 //------------------------------------------------------------------------------
-/** 標準egui Buttonへ立体枠とfocus枠を追加します。click/keyboard/accessibilityは元の部品に任せます。 */
+/**
+ * 標準egui Buttonへ立体枠とfocus枠を追加します。click/keyboard/accessibilityは元の部品に任せます。
+ *
+ * # Returns
+ *
+ * 標準 button の元の応答。自作枠は入力判定と accessibility の契約を置き換えません。
+ */
 //------------------------------------------------------------------------------
 pub(super) fn button(ui: &mut egui::Ui, button: egui::Button<'_>, enabled: bool) -> egui::Response {
 	let response = ui.add_enabled(enabled, button);
 	let pressed = response.is_pointer_button_down_on()
 		|| (response.has_focus() && ui.input(|input| input.key_down(egui::Key::Space)));
 	bevel(ui, &response, pressed);
+	// keyboard focus がある標準 button に限り、追加の focus 枠を描く
 	if response.has_focus() {
 		ui.painter().rect_stroke(
 			response.rect.shrink(3.0),
@@ -225,10 +288,13 @@ pub(super) fn button(ui: &mut egui::Ui, button: egui::Button<'_>, enabled: bool)
 }
 
 //------------------------------------------------------------------------------
-/** 標準TextEditのresponseへ凹枠を描きます。入力・selection・IME・accessibilityを変更しません。 */
+/**
+ * 標準TextEditのresponseへ凹枠を描きます。入力・selection・IME・accessibilityを変更しません。
+ */
 //------------------------------------------------------------------------------
 pub(super) fn text_edit_frame(ui: &egui::Ui, response: &egui::Response) {
 	bevel(ui, response, true);
+	// 入力 focus のときだけ内側の強調枠を描き、IME や hit 領域は変更しない
 	if response.has_focus() {
 		ui.painter().rect_stroke(
 			response.rect.shrink(1.5),
@@ -244,10 +310,13 @@ mod tests {
 	use super::*;
 
 	//------------------------------------------------------------------------------
-	/** 未搭載・不正データでもNotoを両familyの先頭に維持し、別familyをMS Gothicと誤認しません。 */
+	/**
+	 * 未搭載・不正データでもNotoを両familyの先頭に維持し、別familyをMS Gothicと誤認しません。
+	 */
 	//------------------------------------------------------------------------------
 	#[test]
 	fn falls_back_for_missing_invalid_or_unrelated_font() {
+		// OS font の欠落・破損・別 family の全条件で、同じ埋込み fallback を検証する
 		for system in [
 			None,
 			Some((PathBuf::from("invalid"), vec![0, 1, 2])),
@@ -256,6 +325,7 @@ mod tests {
 			let fonts = fonts_with_system(system);
 			assert!(fonts.source.contains("embedded OFL fallback"));
 			assert!(!fonts.definitions.font_data.contains_key(MS_GOTHIC));
+			// 本文と等幅のどちらにも Noto が先頭に残ることを確認する
 			for family in [FontFamily::Proportional, FontFamily::Monospace] {
 				assert_eq!(fonts.definitions.families[&family][0], "Noto Sans JP");
 			}

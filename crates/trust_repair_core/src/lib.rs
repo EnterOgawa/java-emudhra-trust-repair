@@ -2,8 +2,8 @@
 /*!
  * - ファイル: lib.rs
  * - 概要: 副作用を持たない信頼ストア対策の定義と公開入口を提供します。
- * - バージョン: 01.01.00
- * - 作成日: 2026/10/26
+ * - バージョン: 01.00.00
+ * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
  *
@@ -20,8 +20,7 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/26  safe Rust の core と埋込み定義の公開入口を追加。
- * Ver.01.01.00  Shunji Ogawa  2026/10/26  RFC inventory・診断・変更計画を公開。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
  * ```
  *
  * 備考:

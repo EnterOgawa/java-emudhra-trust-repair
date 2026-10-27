@@ -3,7 +3,7 @@
  * - ファイル: policy.rs
  * - 概要: 埋込み対策定義を検証し、変更できない参照として提供します。
  * - バージョン: 01.00.00
- * - 作成日: 2026/10/26
+ * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
  *
@@ -20,7 +20,7 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/26  4 ルートの埋込み定義と不正定義の拒否を追加。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
  * ```
  *
  * 備考:
@@ -222,6 +222,10 @@ impl fmt::Display for PolicyError {
 	 * # Arguments
 	 *
 	 * - `formatter`: 本呼出し中だけ可変借用する出力先。
+	 *
+	 * # Returns
+	 *
+	 * 出力先の書込みに成功すれば `Ok(())`。
 	 *
 	 * # Errors
 	 *

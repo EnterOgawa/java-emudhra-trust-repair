@@ -3,21 +3,29 @@
  * - ファイル: internal_qa.rs
  * - 概要: 明示 QA build の自アプリだけを永続化境界で停止し、実 kill の証拠を残します。
  * - バージョン: 01.00.00
- * - 作成日: 2026/10/26
+ * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
  *
- * ライセンス: SPDX-License-Identifier: Apache-2.0
- * Apache License, Version 2.0。全文はルートの LICENSE を参照してください。
+ * ライセンス:
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ * 本ファイルには Apache License, Version 2.0 が適用されます。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
  *
  * 更新履歴:
+ *
  * ```text
- * Ver.01.00.00  Shunji Ogawa  2026/10/26  明示 feature と専用試験領域に限定した停止を追加。
+ * VerNo.        author        update      comment
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
  * ```
  *
- * 備考: 通常 build には含めません。他 process の終了や file の置換はしません。
+ * 備考:
+ *
+ * 通常 build には含めません。他 process の終了や file の置換はしません。
  */
 //------------------------------------------------------------------------------
 
@@ -43,10 +51,12 @@ static OCCURRENCE: AtomicUsize = AtomicUsize::new(0);
  */
 //------------------------------------------------------------------------------
 pub fn qa_checkpoint(label: &str, item: Option<usize>) {
+	// 明示の子専用境界設定がなければ、通常処理へ介入しない
 	let Some(expected) = std::env::var_os("JTR_QA_CHECKPOINT") else {
 		return;
 	};
 	let actual = item.map_or_else(|| label.to_owned(), |index| format!("{label}:{index}"));
+	// 指定された工程と item が一致した境界だけを停止対象にする
 	if expected != actual.as_str() {
 		return;
 	}
@@ -54,6 +64,7 @@ pub fn qa_checkpoint(label: &str, item: Option<usize>) {
 		.ok()
 		.map(|value| value.parse::<usize>().expect("QA occurrence"))
 		.unwrap_or(1);
+	// 同じ境界の指定回数だけを停止し、先行する別の出現は継続する
 	if OCCURRENCE.fetch_add(1, Ordering::Relaxed) + 1 != wanted {
 		return;
 	}
@@ -77,6 +88,7 @@ pub fn qa_checkpoint(label: &str, item: Option<usize>) {
 	file.sync_all().expect("QA marker sync");
 	drop(file);
 	let started = Instant::now();
+	// 親の release marker を待ち、120 秒で試験を失敗させて無限待機を防ぐ
 	while !marker.with_extension("release").exists() {
 		assert!(
 			started.elapsed() < Duration::from_secs(120),
