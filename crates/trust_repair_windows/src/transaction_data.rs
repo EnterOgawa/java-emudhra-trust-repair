@@ -1,7 +1,7 @@
 //------------------------------------------------------------------------------
 /*!
  * - ファイル: transaction_data.rs
- * - 概要: manifest と順序付き journal の schema・上限・復旧入力を検証します。
+ * - 概要: manifest と順序付き journal の schema・上限・復旧入力を検証します
  * - バージョン: 01.00.00
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
@@ -11,7 +11,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  * 本ファイルには Apache License, Version 2.0 が適用されます。
- * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください
  * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
@@ -20,13 +20,13 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
  * ```
  *
  * 備考:
  *
  * 同じ本人が書換えられる JSON/hash は改ざん耐性や署名ではありません。
- * 末尾破断は成功扱いせず、実ファイルの照合による復旧だけを許可します。
+ * 末尾破断は成功扱いせず、実ファイルの照合による復旧だけを許可します
  */
 //------------------------------------------------------------------------------
 
@@ -46,63 +46,63 @@ use crate::snapshot::{FileSnapshot, read_snapshot};
 use crate::transaction::{TransactionCode, TransactionError, TransactionPhase, TransactionState};
 use crate::transaction_io::{same_security, valid_security};
 
-/// manifest/journal の各最大 byte 数です。鍵・password は保存しません。
+/// manifest/journal の各最大 byte 数です。鍵・password は保存しません
 pub(crate) const MAX_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
-/// 一つの群の最大 store 数です。上限超過時は準備前に拒否します。
+/// 一つの群の最大 store 数です。上限超過時は準備前に拒否します
 pub(crate) const MAX_STORES: usize = 128;
 
-/// 保存する形式。任意の文字列から未知形式を作れません。
+/// 保存する形式。任意の文字列から未知形式を作れません
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum SavedFormat {
-	/// Java KeyStore。
+	/// Java KeyStore
 	Jks,
-	/// PKCS #12。
+	/// PKCS #12
 	Pkcs12,
 }
 
-/// 保存する種別。自動変更対象は証明書 entry のみです。
+/// 保存する種別。自動変更対象は証明書 entry のみです
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum SavedKind {
-	/// trustedCertEntry。
+	/// trustedCertEntry
 	TrustedCertificate,
 }
 
-/// 別名・種別・DER hash による完全比較用の entry です。
+/// 別名・種別・DER hash による完全比較用の entry です
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SavedEntry {
-	/// 補正しない別名。
+	/// 補正しない別名
 	pub alias: String,
-	/// 既知種別。
+	/// 既知種別
 	pub kind: SavedKind,
-	/// 一つの DER の SHA-256。
+	/// 一つの DER の SHA-256
 	pub sha256: String,
 }
 
-/// 全非対象を省略しない比較用 inventory です。
+/// 全非対象を省略しない比較用 inventory です
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SavedInventory {
-	/// 維持する形式。
+	/// 維持する形式
 	pub format: SavedFormat,
-	/// 別名昇順の全 entry。
+	/// 別名昇順の全 entry
 	pub entries: Vec<SavedEntry>,
 }
 
 impl SavedInventory {
 	//------------------------------------------------------------------------------
 	/**
-	 * 検証済み inventory だけを保存形式へ移します。鍵混在では変更計画を拒否します。
+	 * 検証済み inventory だけを保存形式へ移します。鍵混在では変更計画を拒否します
 	 *
 	 * # Returns
 	 *
-	 * 入力を借用せず、全別名・DER ハッシュ・形式を所有する保存用 inventory。
+	 * 入力を借用せず、全別名・DER ハッシュ・形式を所有する保存用 inventory
 	 *
 	 * # Errors
 	 *
-	 * trustedCertEntry 以外のエントリ、または証明書が一件でないエントリを含む場合。
+	 * trustedCertEntry 以外のエントリ、または証明書が一件でないエントリを含む場合
 	 */
 	//------------------------------------------------------------------------------
 	pub fn from_inventory(value: &StoreInventory) -> Result<Self, TransactionError> {
@@ -131,15 +131,15 @@ impl SavedInventory {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * DER 定義の全一致を除いた期待 inventory を作ります。別名を削除条件にしません。
+	 * DER 定義の全一致を除いた期待 inventory を作ります。別名を削除条件にしません
 	 *
 	 * # Arguments
 	 *
-	 * - `policy`: 除外する証明書を DER ハッシュの完全一致で指定する定義。
+	 * - `policy`: 除外する証明書を DER ハッシュの完全一致で指定する定義
 	 *
 	 * # Returns
 	 *
-	 * 対象 DER を持つエントリを除いた、新しい期待 inventory。元の一覧は変更しません。
+	 * 対象 DER を持つエントリを除いた、新しい期待 inventory。元の一覧は変更しません
 	 */
 	//------------------------------------------------------------------------------
 	pub fn without_targets(&self, policy: &Policy) -> Self {
@@ -161,7 +161,7 @@ impl SavedInventory {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 復元入力の件数/文字/重複/hash/順序を検査します。
+	 * 復元入力の件数/文字/重複/hash/順序を検査します
 	 */
 	//------------------------------------------------------------------------------
 	fn validate(&self) -> bool {
@@ -178,65 +178,65 @@ impl SavedInventory {
 	}
 }
 
-/// 一つの置換と復元の immutable な材料です。
+/// 一つの置換と復元の immutable な材料です
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ManifestItem {
-	/// 元 path/ID/hash/保持 metadata。
+	/// 元 path/ID/hash/保持 metadata
 	pub original: FileSnapshot,
-	/// 準備した stage の実体 ID と、置換先 path の期待状態。
+	/// 準備した stage の実体 ID と、置換先 path の期待状態
 	pub applied: FileSnapshot,
-	/// 全件の変更前一覧。
+	/// 全件の変更前一覧
 	pub before: SavedInventory,
-	/// 全非対象だけが残る期待一覧。
+	/// 全非対象だけが残る期待一覧
 	pub after: SavedInventory,
-	/// 削除予定の全 entry。重複 DER の別名も含みます。
+	/// 削除予定の全 entry。重複 DER の別名も含みます
 	pub deletions: Vec<SavedEntry>,
-	/// backup directory 内の固定形式の相対 file 名。
+	/// backup directory 内の固定形式の相対 file 名
 	pub backup_name: String,
-	/// 対象の親 directory を基準にした、隣接 work directory の相対名。
+	/// 対象の親 directory を基準にした、隣接 work directory の相対名
 	pub work_name: String,
-	/// work directory 内の適用 stage の固定相対名。
+	/// work directory 内の適用 stage の固定相対名
 	pub stage_name: String,
-	/// work directory 内の同 volume recovery copy の固定相対名。
+	/// work directory 内の同 volume recovery copy の固定相対名
 	pub recovery_name: String,
 }
 
-/// 上書きしない manifest schema 1 です。
+/// 上書きしない manifest schema 1 です
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Manifest {
-	/// 受理する schema の具体値。
+	/// 受理する schema の具体値
 	pub schema_version: u32,
-	/// directory 名と一致する ID。
+	/// directory 名と一致する ID
 	pub transaction_id: String,
-	/// 作成した製品の版。
+	/// 作成した製品の版
 	pub app_version: String,
-	/// 今回の定義 ID。
+	/// 今回の定義 ID
 	pub policy_id: String,
-	/// 定義 ID だけの改変を防ぐため照合する四つの DER hash。
+	/// 定義 ID だけの改変を防ぐため照合する四つの DER hash
 	pub policy_hashes: Vec<String>,
-	/// 選択した Java root。
+	/// 選択した Java root
 	pub java_root: PathBuf,
-	/// release/java/keytool の厳密な実体再照合材料。
+	/// release/java/keytool の厳密な実体再照合材料
 	pub java: [FileSnapshot; 3],
-	/// 削除対象のある全ストア。
+	/// 削除対象のある全ストア
 	pub items: Vec<ManifestItem>,
 }
 
 impl Manifest {
 	//------------------------------------------------------------------------------
 	/**
-	 * schema、policy、path、重複、snapshot と全差分を検証します。disk 内容は別途照合します。
+	 * schema、policy、path、重複、snapshot と全差分を検証します。disk 内容は別途照合します
 	 *
 	 * # Arguments
 	 *
-	 * - `id`: 読み込んだ directory に要求する transaction ID。
-	 * - `root`: 記録内の対象パスが入り込んではならない backup root。
+	 * - `id`: 読み込んだ directory に要求する transaction ID
+	 * - `root`: 記録内の対象パスが入り込んではならない backup root
 	 *
 	 * # Errors
 	 *
-	 * schema・定義・パス・件数・重複・snapshot・全差分のいずれかが不正な場合。
+	 * schema・定義・パス・件数・重複・snapshot・全差分のいずれかが不正な場合
 	 */
 	//------------------------------------------------------------------------------
 	pub fn validate(&self, id: &str, root: &Path) -> Result<(), TransactionError> {
@@ -317,97 +317,97 @@ impl Manifest {
 	}
 }
 
-/// 順序番号付きの journal 一行です。
+/// 順序番号付きの journal 一行です
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct JournalRecord {
-	/// 1 始まり、欠番なしの番号。
+	/// 1 始まり、欠番なしの番号
 	pub sequence: u64,
-	/// 型付きの状態変化。
+	/// 型付きの状態変化
 	pub event: JournalEvent,
-	/// item 付き工程の 0 始まり位置。
+	/// item 付き工程の 0 始まり位置
 	pub item: Option<usize>,
-	/// 復元 stage/recovery の相対名を一意にする操作 ID。Restoring の開始だけに保存します。
+	/// 復元 stage/recovery の相対名を一意にする操作 ID。Restoring の開始だけに保存します
 	pub operation_id: Option<String>,
 }
 
-/// 置換の直前/検証済みを別々に記録します。
+/// 置換の直前/検証済みを別々に記録します
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum JournalEvent {
-	/// 全 stage と manifest を保存しました。
+	/// 全 stage と manifest を保存しました
 	Prepared,
-	/// 順次確定を開始します。
+	/// 順次確定を開始します
 	Committing,
-	/// 一つの置換を開始します。
+	/// 一つの置換を開始します
 	ReplaceStarted,
-	/// 一つの適用後を検証しました。
+	/// 一つの適用後を検証しました
 	ReplaceVerified,
-	/// 全適用を検証しました。
+	/// 全適用を検証しました
 	Applied,
-	/// 逆順の rollback を開始します。
+	/// 逆順の rollback を開始します
 	RollingBack,
-	/// 一つの rollback を開始します。
+	/// 一つの rollback を開始します
 	RollbackStarted,
-	/// 一つの元状態を検証しました。
+	/// 一つの元状態を検証しました
 	RollbackVerified,
-	/// 群全体を元へ戻しました。
+	/// 群全体を元へ戻しました
 	RolledBack,
-	/// 推測での上書きを中止しました。
+	/// 推測での上書きを中止しました
 	RecoveryRequired,
-	/// 利用者の復元/復旧を開始します。
+	/// 利用者の復元/復旧を開始します
 	Restoring,
-	/// 一つの復元を開始します。
+	/// 一つの復元を開始します
 	RestoreStarted,
-	/// 一つの元状態を検証しました。
+	/// 一つの元状態を検証しました
 	RestoreVerified,
-	/// 群全体を復元しました。
+	/// 群全体を復元しました
 	Restored,
-	/// 復元途中の失敗を逆順で適用後へ戻しました。
+	/// 復元途中の失敗を逆順で適用後へ戻しました
 	RestoreRolledBack,
 }
 
-/// journal の検証結果です。成功文字列より実体の照合を優先します。
+/// journal の検証結果です。成功文字列より実体の照合を優先します
 pub(crate) struct JournalStatus {
-	/// 最後の有効な主状態。
+	/// 最後の有効な主状態
 	pub state: TransactionState,
-	/// 次の追記番号。
+	/// 次の追記番号
 	pub next: u64,
-	/// 最後の未改行行が破断していました。
+	/// 最後の未改行行が破断していました
 	pub torn_tail: bool,
-	/// 最後まで有効な byte 長。破断時は元 journal を触らず別 journal へ分岐します。
+	/// 最後まで有効な byte 長。破断時は元 journal を触らず別 journal へ分岐します
 	pub valid_bytes: u64,
-	/// 各 item に永続化済みの置換開始記録があるか。
+	/// 各 item に永続化済みの置換開始記録があるか
 	pub started: Vec<bool>,
-	/// 最後の有効な記録で未検証の item。欠落時の自動復旧はこの item にだけ許可します。
+	/// 最後の有効な記録で未検証の item。欠落時の自動復旧はこの item にだけ許可します
 	pub pending: Option<usize>,
-	/// 最新の復元操作 ID。未知の相対 path を読み込む代わりに固定名を生成します。
+	/// 最新の復元操作 ID。未知の相対 path を読み込む代わりに固定名を生成します
 	pub operation_id: Option<String>,
 }
 
-/// 他の writer を許可しない、追記と sync の所有者です。
+/// 他の writer を許可しない、追記と sync の所有者です
 pub(crate) struct Journal {
-	/// 明示的に flush/sync する file。
+	/// 明示的に flush/sync する file
 	file: File,
-	/// 次に永続化する番号。
+	/// 次に永続化する番号
 	next: u64,
-	/// 一度の write/flush/sync 失敗後は、破断行へ追記して証拠を壊しません。
+	/// 一度の write/flush/sync 失敗後は、破断行へ追記して証拠を壊しません
 	poisoned: bool,
 }
 
 impl Journal {
 	//------------------------------------------------------------------------------
 	/**
-	 * 新規 journal を作ります。既存の記録は上書きしません。
+	 * 新規 journal を作ります。既存の記録は上書きしません
 	 *
 	 * # Returns
 	 *
 	 * create_new で作成した空の journal の所有者。ファイルは drop 時に閉じます。
-	 * Prepared などの記録は、呼出し側が別途 append します。
+	 * Prepared などの記録は、呼出し側が別途 append します
 	 *
 	 * # Errors
 	 *
-	 * 新規 file の作成に失敗した場合。既存の記録へ切り替えて追記しません。
+	 * 新規 file の作成に失敗した場合。既存の記録へ切り替えて追記しません
 	 */
 	//------------------------------------------------------------------------------
 	pub fn create(path: &Path) -> Result<Self, TransactionError> {
@@ -426,20 +426,20 @@ impl Journal {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 読戻し照合済みの正常 journal を追記用に開きます。破断 journal は修復せず拒否します。
+	 * 読戻し照合済みの正常 journal を追記用に開きます。破断 journal は修復せず拒否します
 	 *
 	 * # Arguments
 	 *
-	 * - `path`: 既に読戻し検証した journal。
-	 * - `status`: 読み取った正常状態・次番号・有効 byte 数。
+	 * - `path`: 既に読戻し検証した journal
+	 * - `status`: 読み取った正常状態・次番号・有効 byte 数
 	 *
 	 * # Returns
 	 *
-	 * 同じ正常記録の末尾に追記する所有者。
+	 * 同じ正常記録の末尾に追記する所有者
 	 *
 	 * # Errors
 	 *
-	 * 破断、byte 長の変化、追記 handle の取得、または file 長の再取得の失敗。
+	 * 破断、byte 長の変化、追記 handle の取得、または file 長の再取得の失敗
 	 */
 	//------------------------------------------------------------------------------
 	pub fn resume(path: &Path, status: &JournalStatus) -> Result<Self, TransactionError> {
@@ -475,17 +475,17 @@ impl Journal {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 一つの型付き記録を改行と共に flush/sync します。失敗を成功状態へ変換しません。
+	 * 一つの型付き記録を改行と共に flush/sync します。失敗を成功状態へ変換しません
 	 *
 	 * # Arguments
 	 *
-	 * - `event`: 追記する状態遷移。
-	 * - `item`: 個別対象なら 0 始まりの位置、群全体なら `None`。
+	 * - `event`: 追記する状態遷移
+	 * - `item`: 個別対象なら 0 始まりの位置、群全体なら `None`
 	 *
 	 * # Errors
 	 *
 	 * 以前の書込み失敗、または JSON 化・write・flush・sync の失敗。
-	 * 失敗時は次番号を進めません。
+	 * 失敗時は次番号を進めません
 	 */
 	//------------------------------------------------------------------------------
 	pub fn append(
@@ -498,15 +498,15 @@ impl Journal {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 復元の新規 stage/recovery の位置を、開始前に journal へ固定します。
+	 * 復元の新規 stage/recovery の位置を、開始前に journal へ固定します
 	 *
 	 * # Arguments
 	 *
-	 * - `operation`: 今回の復元用 stage/recovery を識別する新規操作 ID。
+	 * - `operation`: 今回の復元用 stage/recovery を識別する新規操作 ID
 	 *
 	 * # Errors
 	 *
-	 * 操作 ID の不正、以前の書込み失敗、または Restoring 記録の JSON 化・追記・flush・sync の失敗。
+	 * 操作 ID の不正、以前の書込み失敗、または Restoring 記録の JSON 化・追記・flush・sync の失敗
 	 */
 	//------------------------------------------------------------------------------
 	pub fn start_restore(&mut self, operation: &str) -> Result<(), TransactionError> {
@@ -519,18 +519,18 @@ impl Journal {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 型付き記録を一行ずつ永続化します。追記失敗時は番号を進めません。
+	 * 型付き記録を一行ずつ永続化します。追記失敗時は番号を進めません
 	 *
 	 * # Arguments
 	 *
-	 * - `event`: 記録する状態遷移。
-	 * - `item`: 個別対象なら 0 始まりの位置。
-	 * - `operation_id`: Restoring のときだけ記録する復元操作 ID。
+	 * - `event`: 記録する状態遷移
+	 * - `item`: 個別対象なら 0 始まりの位置
+	 * - `operation_id`: Restoring のときだけ記録する復元操作 ID
 	 *
 	 * # Errors
 	 *
 	 * 以前の書込み失敗、または JSON 化・write・flush・sync の失敗。
-	 * 書込み済み byte は取り消さず、次番号を進めません。
+	 * 書込み済み byte は取り消さず、次番号を進めません
 	 */
 	//------------------------------------------------------------------------------
 	fn append_record(
@@ -577,21 +577,21 @@ impl Journal {
 
 //------------------------------------------------------------------------------
 /**
- * 先頭から順序/状態/範囲を検査し、末尾未改行の破断だけを安全な解析結果に残します。
+ * 先頭から順序/状態/範囲を検査し、末尾未改行の破断だけを安全な解析結果に残します
  *
  * # Arguments
  *
- * - `path`: 容量を制限して読み取る既存 journal。
- * - `count`: item 番号の上限となる manifest の項目数。
+ * - `path`: 容量を制限して読み取る既存 journal
+ * - `count`: item 番号の上限となる manifest の項目数
  *
  * # Returns
  *
- * 完全な行から復元した状態と次番号。空記録や未改行末尾は torn_tail として保持します。
+ * 完全な行から復元した状態と次番号。空記録や未改行末尾は torn_tail として保持します
  *
  * # Errors
  *
  * snapshot の取得、JSON、番号・item 範囲・状態遷移・operation ID の不整合。
- * 末尾破断という分類を、他の I/O・構文エラーの代わりに使用しません。
+ * 末尾破断という分類を、他の I/O・構文エラーの代わりに使用しません
  */
 //------------------------------------------------------------------------------
 pub(crate) fn read_journal(path: &Path, count: usize) -> Result<JournalStatus, TransactionError> {
@@ -766,11 +766,11 @@ pub(crate) fn read_journal(path: &Path, count: usize) -> Result<JournalStatus, T
 
 //------------------------------------------------------------------------------
 /**
- * 小さい immutable JSON を新規保存し、sync と byte 全一致の読戻しを検証します。
+ * 小さい immutable JSON を新規保存し、sync と byte 全一致の読戻しを検証します
  *
  * # Errors
  *
- * 容量上限、JSON 化、新規保存・sync・読戻し、または byte 全一致の検証に失敗した場合。
+ * 容量上限、JSON 化、新規保存・sync・読戻し、または byte 全一致の検証に失敗した場合
  */
 //------------------------------------------------------------------------------
 pub(crate) fn write_manifest(path: &Path, manifest: &Manifest) -> Result<(), TransactionError> {
@@ -793,17 +793,17 @@ pub(crate) fn write_manifest(path: &Path, manifest: &Manifest) -> Result<(), Tra
 
 //------------------------------------------------------------------------------
 /**
- * 新規 file だけに書込み、flush と sync を成功条件にします。失敗物は削除しません。
+ * 新規 file だけに書込み、flush と sync を成功条件にします。失敗物は削除しません
  *
  * # Arguments
  *
- * - `path`: create_new で作る保存先。既存 file は受け付けません。
- * - `bytes`: 全体を保存して flush/sync する内容。
- * - `phase`: I/O 失敗へ付ける工程。
+ * - `path`: create_new で作る保存先。既存 file は受け付けません
+ * - `bytes`: 全体を保存して flush/sync する内容
+ * - `phase`: I/O 失敗へ付ける工程
  *
  * # Errors
  *
- * 作成、全書込み、flush、sync のいずれかの失敗。途中の新規 file は証拠として残します。
+ * 作成、全書込み、flush、sync のいずれかの失敗。途中の新規 file は証拠として残します
  */
 //------------------------------------------------------------------------------
 pub(crate) fn write_new(
@@ -831,15 +831,15 @@ pub(crate) fn write_new(
 
 //------------------------------------------------------------------------------
 /**
- * 制限 root 内の manifest だけを読みます。内容の schema 検証は呼出し側で実施します。
+ * 制限 root 内の manifest だけを読みます。内容の schema 検証は呼出し側で実施します
  *
  * # Returns
  *
- * 容量上限内で JSON として解析した manifest。schema の意味検証は未実施です。
+ * 容量上限内で JSON として解析した manifest。schema の意味検証は未実施です
  *
  * # Errors
  *
- * snapshot の取得または JSON 解析の失敗。
+ * snapshot の取得または JSON 解析の失敗
  */
 //------------------------------------------------------------------------------
 pub(crate) fn load_manifest(path: &Path) -> Result<Manifest, TransactionError> {
@@ -850,7 +850,7 @@ pub(crate) fn load_manifest(path: &Path) -> Result<Manifest, TransactionError> {
 
 //------------------------------------------------------------------------------
 /**
- * 既存を上書きしない ID の字句形式を検査します。path separator を受理しません。
+ * 既存を上書きしない ID の字句形式を検査します。path separator を受理しません
  */
 //------------------------------------------------------------------------------
 pub(crate) fn valid_id(id: &str) -> bool {
@@ -866,7 +866,7 @@ pub(crate) fn valid_id(id: &str) -> bool {
 
 //------------------------------------------------------------------------------
 /**
- * SHA-256 の上位文字を正規形とし、不正な長さや文字は補正しません。
+ * SHA-256 の上位文字を正規形とし、不正な長さや文字は補正しません
  */
 //------------------------------------------------------------------------------
 fn valid_hash(value: &str) -> bool {
@@ -878,7 +878,7 @@ fn valid_hash(value: &str) -> bool {
 
 //------------------------------------------------------------------------------
 /**
- * 未存在 path も検査できる、純粋な DOS path の字句検査です。実体検査は別に必須です。
+ * 未存在 path も検査できる、純粋な DOS path の字句検査です。実体検査は別に必須です
  */
 //------------------------------------------------------------------------------
 pub(crate) fn valid_path(path: &Path) -> bool {
@@ -896,7 +896,7 @@ pub(crate) fn valid_path(path: &Path) -> bool {
 
 //------------------------------------------------------------------------------
 /**
- * snapshot を信用する前に path/上限/hash/metadata の schema を検査します。
+ * snapshot を信用する前に path/上限/hash/metadata の schema を検査します
  */
 //------------------------------------------------------------------------------
 fn valid_snapshot(snapshot: &FileSnapshot) -> bool {
@@ -912,7 +912,7 @@ fn valid_snapshot(snapshot: &FileSnapshot) -> bool {
 
 //------------------------------------------------------------------------------
 /**
- * 更新日時を除く、維持必須 metadata の完全一致を調べます。
+ * 更新日時を除く、維持必須 metadata の完全一致を調べます
  */
 //------------------------------------------------------------------------------
 pub(crate) fn same_preserved_metadata(left: &FileSnapshot, right: &FileSnapshot) -> bool {
@@ -923,7 +923,7 @@ pub(crate) fn same_preserved_metadata(left: &FileSnapshot, right: &FileSnapshot)
 
 //------------------------------------------------------------------------------
 /**
- * byte hash と全保持 metadata/更新日時を比較します。復元で file ID の再利用は要求しません。
+ * byte hash と全保持 metadata/更新日時を比較します。復元で file ID の再利用は要求しません
  */
 //------------------------------------------------------------------------------
 pub(crate) fn same_content_metadata(left: &FileSnapshot, right: &FileSnapshot) -> bool {
@@ -937,7 +937,7 @@ pub(crate) fn same_content_metadata(left: &FileSnapshot, right: &FileSnapshot) -
 
 //------------------------------------------------------------------------------
 /**
- * backup の相対 file 名を位置から一意に生成します。
+ * backup の相対 file 名を位置から一意に生成します
  */
 //------------------------------------------------------------------------------
 pub(crate) fn backup_name(index: usize) -> String {
@@ -946,21 +946,21 @@ pub(crate) fn backup_name(index: usize) -> String {
 
 //------------------------------------------------------------------------------
 /**
- * 隣接 work directory を target と ID/位置から決め、manifest の任意相対 path を使いません。
+ * 隣接 work directory を target と ID/位置から決め、manifest の任意相対 path を使いません
  *
  * # Arguments
  *
- * - `target`: 隣接する専用 work directory の基準となる元対象。
- * - `id`: 保存済みの transaction または復元操作の ID。
- * - `index`: manifest 内の 0 始まりの位置。
+ * - `target`: 隣接する専用 work directory の基準となる元対象
+ * - `id`: 保存済みの transaction または復元操作の ID
+ * - `index`: manifest 内の 0 始まりの位置
  *
  * # Returns
  *
- * 元対象の親の下にある、ID と位置から導いた専用 directory のパス。
+ * 元対象の親の下にある、ID と位置から導いた専用 directory のパス
  *
  * # Errors
  *
- * 元対象の親パスを取得できない場合。
+ * 元対象の親パスを取得できない場合
  */
 //------------------------------------------------------------------------------
 pub(crate) fn work_directory(
@@ -976,7 +976,7 @@ pub(crate) fn work_directory(
 
 //------------------------------------------------------------------------------
 /**
- * schema/整合性失敗の型付き値を作ります。入力本文は保存しません。
+ * schema/整合性失敗の型付き値を作ります。入力本文は保存しません
  */
 //------------------------------------------------------------------------------
 fn invalid() -> TransactionError {

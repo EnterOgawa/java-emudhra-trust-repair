@@ -1,7 +1,7 @@
 //------------------------------------------------------------------------------
 /*!
  * - ファイル: lib.rs
- * - 概要: Windows 境界の crate と対象ビルドの確認入口を提供します。
+ * - 概要: Windows 境界の crate と対象ビルドの確認入口を提供します
  * - バージョン: 01.00.00
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
@@ -11,7 +11,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  * 本ファイルには Apache License, Version 2.0 が適用されます。
- * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください
  * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
@@ -20,12 +20,12 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
  * ```
  *
  * 備考:
  *
- * unsafe は必要な Windows API 境界だけで許可します。
+ * unsafe は必要な Windows API 境界だけで許可します
  */
 //------------------------------------------------------------------------------
 
@@ -83,26 +83,26 @@ pub use transaction::{
 use std::error::Error;
 use std::fmt;
 
-/// 製品対象の Windows x64 MSVC 以外でビルドされていることを表します。
+/// 製品対象の Windows x64 MSVC 以外でビルドされていることを表します
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnsupportedTarget;
 
 impl fmt::Display for UnsupportedTarget {
 	//------------------------------------------------------------------------------
 	/**
-	 * [`fmt::Display`] に従い、必要なビルド対象を表示します。
+	 * [`fmt::Display`] に従い、必要なビルド対象を表示します
 	 *
 	 * # Arguments
 	 *
-	 * - `formatter`: 本呼出し中だけ可変借用する出力先。
+	 * - `formatter`: 本呼出し中だけ可変借用する出力先
 	 *
 	 * # Returns
 	 *
-	 * 出力先の書込みに成功すれば `Ok(())`。
+	 * 出力先の書込みに成功すれば `Ok(())`
 	 *
 	 * # Errors
 	 *
-	 * 出力先が失敗した場合、その `fmt::Error` を返します。
+	 * 出力先が失敗した場合、その `fmt::Error` を返します
 	 */
 	//------------------------------------------------------------------------------
 	fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -114,20 +114,20 @@ impl Error for UnsupportedTarget {}
 
 //------------------------------------------------------------------------------
 /**
- * 実行中のバイナリが Windows x64 MSVC 向けにビルドされたことを確認します。
+ * 実行中のバイナリが Windows x64 MSVC 向けにビルドされたことを確認します
  *
  * # Returns
  *
- * `x86_64-pc-windows-msvc` のビルドなら `Ok(())` を返します。
+ * `x86_64-pc-windows-msvc` のビルドなら `Ok(())` を返します
  *
  * # Errors
  *
- * それ以外の対象では [`UnsupportedTarget`] を返します。
+ * それ以外の対象では [`UnsupportedTarget`] を返します
  *
  * # Notes
  *
  * OS の版、NTFS、権限、Java、対象ストアの適合性は検査しません。
- * ファイルや共有状態を変更せず、任意のスレッドから同時に呼び出せます。
+ * ファイルや共有状態を変更せず、任意のスレッドから同時に呼び出せます
  */
 //------------------------------------------------------------------------------
 pub fn ensure_supported_target() -> Result<(), UnsupportedTarget> {

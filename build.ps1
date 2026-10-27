@@ -1,28 +1,28 @@
 #------------------------------------------------------------------------------
 <#
 ファイル: build.ps1
-概要: 通常 release を構築し、実行ファイルと必要な許諾を output へ配置します。
+概要: 通常 release を構築し、実行ファイルと必要な許諾を output へ配置します
 バージョン: 01.00.00
 作成日: 2026/10/27
 制作者: Shunji Ogawa
 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
 
 ライセンス: SPDX-License-Identifier: Apache-2.0
-Apache License, Version 2.0。全文はルートの LICENSE を参照してください。
+Apache License, Version 2.0。全文はルートの LICENSE を参照してください
 会社名: EnterSystem
 
 更新履歴:
-Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
+Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
 
 備考: Cargo の cache は target 側に保持します。成功した exe と許諾だけを output へ配置します。
-既存 exe が使用中などで置換に失敗した場合は、その exe を保持します。
+既存 exe が使用中などで置換に失敗した場合は、その exe を保持します
 #>
 #------------------------------------------------------------------------------
 $ErrorActionPreference = 'Stop'
 $temporaryExe = $null
 Push-Location -LiteralPath $PSScriptRoot
 try {
-	# 必要な許諾を先に確認し、不足した配布物を作らない。
+	# 必要な許諾を先に確認し、不足した配布物を作らない
 	$licenseFiles = @(
 		@{ Source = 'LICENSE'; Destination = 'LICENSE' },
 		@{ Source = 'assets/OFL-NotoSansJP.txt'; Destination = 'licenses/OFL-NotoSansJP.txt' },
@@ -37,11 +37,11 @@ try {
 		}
 	}
 
-	# 今回のbuildが報告した実exeを使い、CARGO_TARGET_DIR変更時の古いexe選択を防ぐ。
+	# 今回のbuildが報告した実exeを使い、CARGO_TARGET_DIR変更時の古いexe選択を防ぐ
 	$artifacts = @(& cargo build --release --locked -p trust_repair_app --target x86_64-pc-windows-msvc --message-format=json-render-diagnostics | ForEach-Object {
 		$message = $_ | ConvertFrom-Json
 		if ($message.reason -eq 'compiler-message') {
-			# JSONに含まれる診断文を表示し、build失敗の理由を隠さない。
+			# JSONに含まれる診断文を表示し、build失敗の理由を隠さない
 			Write-Host -NoNewline $message.message.rendered
 		} elseif ($message.reason -eq 'compiler-artifact' -and $message.target.name -eq 'java-trust-repair' -and $message.executable) {
 			$message
@@ -61,7 +61,7 @@ try {
 		Copy-Item -LiteralPath $license.Source -Destination (Join-Path $outputDirectory $license.Destination) -Force
 	}
 
-	# 既存exeは原子的に置換する。使用中などで失敗しても既存exeを保持し、強制終了しない。
+	# 既存exeは原子的に置換する。使用中などで失敗しても既存exeを保持し、強制終了しない
 	try {
 		if (Test-Path -LiteralPath $destinationExe) {
 			[IO.File]::Replace($temporaryExe, $destinationExe, [NullString]::Value)
@@ -74,7 +74,7 @@ try {
 	Write-Host "Built: $destinationExe"
 	Write-Host "SHA-256: $((Get-FileHash -LiteralPath $destinationExe -Algorithm SHA256).Hash)"
 } finally {
-	# この実行が作成した一時ファイルだけを後始末する。
+	# この実行が作成した一時ファイルだけを後始末する
 	if ($temporaryExe -and (Test-Path -LiteralPath $temporaryExe)) {
 		Remove-Item -LiteralPath $temporaryExe -Force
 	}

@@ -1,7 +1,7 @@
 //------------------------------------------------------------------------------
 /*!
  * - ファイル: qa.rs
- * - 概要: 明示 feature と引数でだけ有効な native 描画・隔離 fixture の縦経路 QA です。
+ * - 概要: 明示 feature と引数でだけ有効な native 描画・隔離 fixture の縦経路 QA です
  * - バージョン: 01.00.00
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
@@ -11,7 +11,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  * 本ファイルには Apache License, Version 2.0 が適用されます。
- * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください
  * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
@@ -20,12 +20,12 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
  * ```
  *
  * 備考:
  *
- * 通常起動では動作しません。既存 GUI 証拠と内部 QA の新規コピーを分離します。
+ * 通常起動では動作しません。既存 GUI 証拠と内部 QA の新規コピーを分離します
  */
 //------------------------------------------------------------------------------
 
@@ -40,55 +40,55 @@ use std::time::{Duration, Instant};
 use trust_repair_core::PlanError;
 use trust_repair_windows::{TransactionOptions, TransactionState};
 
-/// 明示引数だけで有効な自アプリQAです。通常起動・実Javaを対象にしません。
+/// 明示引数だけで有効な自アプリQAです。通常起動・実Javaを対象にしません
 pub struct Preview {
-	/// 選択時の自動確認を検証するか。
+	/// 選択時の自動確認を検証するか
 	auto_status: bool,
-	/// 読み取りだけで終了し、変更/backup不在を外から照合するか。
+	/// 読み取りだけで終了し、変更/backup不在を外から照合するか
 	readonly: bool,
-	/// 存在しないfolderを選択するか。
+	/// 存在しないfolderを選択するか
 	invalid_folder: bool,
-	/// 自動確認中に新しい入力世代へ切り替えるか。
+	/// 自動確認中に新しい入力世代へ切り替えるか
 	switch_folder: bool,
-	/// 日英描画の明示override。
+	/// 日英描画の明示override
 	language: Language,
-	/// 空の簡素画面だけを描画するか。
+	/// 空の簡素画面だけを描画するか
 	preview_only: bool,
-	/// 中断経路を確認するか。
+	/// 中断経路を確認するか
 	cancel: bool,
-	/// 自分のQA windowへのcloseを確認するか。
+	/// 自分のQA windowへのcloseを確認するか
 	close: bool,
-	/// 不正passwordの拒否経路を確認するか。
+	/// 不正passwordの拒否経路を確認するか
 	failure: bool,
-	/// 所有fixtureへの実作成denyで、主画面の管理者起動案内を確認するか。
+	/// 所有fixtureへの実作成denyで、主画面の管理者起動案内を確認するか
 	permission: bool,
-	/// 完了通知なしのchannel切断を確認するか。
+	/// 完了通知なしのchannel切断を確認するか
 	disconnect: bool,
-	/// 必ずartifacts/settings-layout内の新規fixtureです。
+	/// 必ずartifacts/settings-layout内の新規fixtureです
 	root: PathBuf,
-	/// 逐次actionの位置。
+	/// 逐次actionの位置
 	stage: usize,
-	/// 次のactionまで描画する時刻。
+	/// 次のactionまで描画する時刻
 	after: Instant,
-	/// screenshot保存結果。
+	/// screenshot保存結果
 	capture: Option<Receiver<Result<(), String>>>,
-	/// 実際の工程・回収結果。
+	/// 実際の工程・回収結果
 	log: Vec<String>,
-	/// 所有workerの進捗表示を一度だけ撮ったか。
+	/// 所有workerの進捗表示を一度だけ撮ったか
 	progress_captured: bool,
 }
 impl Preview {
 	//------------------------------------------------------------------------------
 	/**
-	 * 既知QA引数一つだけを受け入れます。空引数は通常OS言語のまま起動します。
+	 * 既知QA引数一つだけを受け入れます。空引数は通常OS言語のまま起動します
 	 *
 	 * # Returns
 	 *
-	 * 引数なしなら `None`、既知の明示引数一つなら対応する QA 状態。
+	 * 引数なしなら `None`、既知の明示引数一つなら対応する QA 状態
 	 *
 	 * # Errors
 	 *
-	 * 引数の件数または内容が既知一覧に一致しない場合に InvalidInput。
+	 * 引数の件数または内容が既知一覧に一致しない場合に InvalidInput
 	 */
 	//------------------------------------------------------------------------------
 	pub fn from_arguments(arguments: &[OsString]) -> Result<Option<Self>, std::io::Error> {
@@ -176,7 +176,7 @@ impl Preview {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 初期画面と処理後のQAで、設定を閉じた処理結果のnative描画を確認します。
+	 * 初期画面と処理後のQAで、設定を閉じた処理結果のnative描画を確認します
 	 */
 	//------------------------------------------------------------------------------
 	pub(super) fn shows_results(&self) -> bool {
@@ -186,7 +186,7 @@ impl Preview {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 結果確認の後でだけ特殊設定を開き、有効な入力欄を描画します。
+	 * 結果確認の後でだけ特殊設定を開き、有効な入力欄を描画します
 	 */
 	//------------------------------------------------------------------------------
 	pub(super) fn shows_settings(&self) -> bool {
@@ -195,17 +195,17 @@ impl Preview {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 自アプリの実描画だけをPNGへ保存します。独立threadの完了をchannelで受け取ります。
+	 * 自アプリの実描画だけをPNGへ保存します。独立threadの完了をchannelで受け取ります
 	 *
 	 * # Arguments
 	 *
-	 * - `context`: このアプリの描画画像を要求する context。
-	 * - `name`: QA root 内の PNG ファイル名の基部。
+	 * - `context`: このアプリの描画画像を要求する context
+	 * - `name`: QA root 内の PNG ファイル名の基部
 	 *
 	 * # Notes
 	 *
 	 * 画像保存 thread の結果を channel に保持し、後続 qa_tick が完了を確認します。
-	 * この関数自体は保存完了を待たず、保存の成否も同期的には返しません。
+	 * この関数自体は保存完了を待たず、保存の成否も同期的には返しません
 	 */
 	//------------------------------------------------------------------------------
 	fn screenshot(&mut self, context: &egui::Context, name: &str) {
@@ -235,7 +235,7 @@ impl Preview {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 実callbackの中断可否を証跡へ記録します。状態判定に自由文は使いません。
+	 * 実callbackの中断可否を証跡へ記録します。状態判定に自由文は使いません
 	 */
 	//------------------------------------------------------------------------------
 	pub(super) fn progress(&mut self, value: trust_repair_windows::TransactionProgress) {
@@ -248,21 +248,21 @@ impl Preview {
 
 //------------------------------------------------------------------------------
 /**
- * 明示QAだけを新規領域へ向けます。通常の既存candidateやuser windowにアクセスしません。
+ * 明示QAだけを新規領域へ向けます。通常の既存candidateやuser windowにアクセスしません
  *
  * # Arguments
  *
- * - `app`: QA 設定を反映して返す、まだ I/O を始めていない画面状態。
- * - `preview`: 明示 QA がなければ `None`。
- * - `font_source`: 実採用した font の出所。QA の log へだけ記録します。
+ * - `app`: QA 設定を反映して返す、まだ I/O を始めていない画面状態
+ * - `preview`: 明示 QA がなければ `None`
+ * - `font_source`: 実採用した font の出所。QA の log へだけ記録します
  *
  * # Returns
  *
- * 通常状態、または専用 fixture と採用言語を設定した画面状態。
+ * 通常状態、または専用 fixture と採用言語を設定した画面状態
  *
  * # Errors
  *
- * QA root の作成・正規化、保存先設定、または必要な fixture 不足。
+ * QA root の作成・正規化、保存先設定、または必要な fixture 不足
  */
 //------------------------------------------------------------------------------
 pub fn configure(
@@ -323,7 +323,7 @@ pub fn configure(
 impl TrustRepairApp {
 	//------------------------------------------------------------------------------
 	/**
-	 * 自分の新規fixtureだけで通常の選択・自動Scan・無効化・復元actionを検証します。
+	 * 自分の新規fixtureだけで通常の選択・自動Scan・無効化・復元actionを検証します
 	 */
 	//------------------------------------------------------------------------------
 	fn qa_auto_step(&mut self, qa: &mut Preview, context: &egui::Context) {
@@ -450,7 +450,7 @@ impl TrustRepairApp {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 通常と同じ確認後action・復元ボタンを逐次呼びます。自動確認は明示QAに限ります。
+	 * 通常と同じ確認後action・復元ボタンを逐次呼びます。自動確認は明示QAに限ります
 	 */
 	//------------------------------------------------------------------------------
 	pub(super) fn qa_tick(&mut self, context: &egui::Context) {
@@ -728,7 +728,7 @@ impl TrustRepairApp {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 所有したQA processの終了結果だけを専用領域へ記録します。
+	 * 所有したQA processの終了結果だけを専用領域へ記録します
 	 */
 	//------------------------------------------------------------------------------
 	pub(super) fn qa_exit_log(&mut self) {

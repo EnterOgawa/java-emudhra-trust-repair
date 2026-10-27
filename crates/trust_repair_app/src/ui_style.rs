@@ -1,7 +1,7 @@
 //------------------------------------------------------------------------------
 /*!
  * - ファイル: ui_style.rs
- * - 概要: OSのMSゴシックと従来のWindowsダイアログ風の表示を設定します。
+ * - 概要: OSのMSゴシックと従来のWindowsダイアログ風の表示を設定します
  * - バージョン: 01.00.00
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
@@ -11,7 +11,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  * 本ファイルには Apache License, Version 2.0 が適用されます。
- * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください
  * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
@@ -20,12 +20,12 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
  * ```
  *
  * 備考:
  *
- * MSフォントはOSから読むだけです。埋込み・保存・再配布しません。
+ * MSフォントはOSから読むだけです。埋込み・保存・再配布しません
  */
 //------------------------------------------------------------------------------
 
@@ -38,21 +38,21 @@ pub(super) const JAPANESE_FONT: &[u8] = include_bytes!("../../../assets/NotoSans
 // 比例幅の別 family を選ばないため、厳密照合する family 名を固定する
 const MS_GOTHIC: &str = "MS Gothic";
 
-/// 設定するフォント群と、実行時に選んだ出典です。元fontのbyteを保存しません。
+/// 設定するフォント群と、実行時に選んだ出典です。元fontのbyteを保存しません
 pub(super) struct UiFonts {
-	/// eguiへ所有権を渡すfont定義。
+	/// eguiへ所有権を渡すfont定義
 	pub(super) definitions: egui::FontDefinitions,
-	/// QAで照合する、選択したfamily/source/faceの説明。
+	/// QAで照合する、選択したfamily/source/faceの説明
 	pub(super) source: String,
 }
 
 //------------------------------------------------------------------------------
 /**
- * TTCを含むfontのfamily名を厳密照合し、MS PGothic/MS UI Gothicを選ばずface番号を返します。
+ * TTCを含むfontのfamily名を厳密照合し、MS PGothic/MS UI Gothicを選ばずface番号を返します
  *
  * # Returns
  *
- * family が MS Gothic と一致した face 番号。不正 font または該当なしなら `None`。
+ * family が MS Gothic と一致した face 番号。不正 font または該当なしなら `None`
  */
 //------------------------------------------------------------------------------
 fn ms_gothic_face(bytes: &[u8]) -> Option<u32> {
@@ -70,15 +70,15 @@ fn ms_gothic_face(bytes: &[u8]) -> Option<u32> {
 
 //------------------------------------------------------------------------------
 /**
- * 読み取り済みOS fontだけを優先登録します。欠落・破損・別familyは既存Notoへ戻します。
+ * 読み取り済みOS fontだけを優先登録します。欠落・破損・別familyは既存Notoへ戻します
  *
  * # Arguments
  *
- * - `system`: OS font のパスと読込み済み byte 列。`None` は埋込み font のみを使います。
+ * - `system`: OS font のパスと読込み済み byte 列。`None` は埋込み font のみを使います
  *
  * # Returns
  *
- * 利用可能なフォント定義と採用元の説明。OS font が使えなければ Noto を先頭にします。
+ * 利用可能なフォント定義と採用元の説明。OS font が使えなければ Noto を先頭にします
  */
 //------------------------------------------------------------------------------
 fn fonts_with_system(system: Option<(PathBuf, Vec<u8>)>) -> UiFonts {
@@ -128,11 +128,11 @@ fn fonts_with_system(system: Option<(PathBuf, Vec<u8>)>) -> UiFonts {
 
 //------------------------------------------------------------------------------
 /**
- * OSのWindowsディレクトリからmsgothic.ttcを読むだけで、失敗時も起動可能な定義を返します。
+ * OSのWindowsディレクトリからmsgothic.ttcを読むだけで、失敗時も起動可能な定義を返します
  *
  * # Returns
  *
- * OS font の取得に失敗しても使用できる、埋込み fallback を含む定義と採用元。
+ * OS font の取得に失敗しても使用できる、埋込み fallback を含む定義と採用元
  */
 //------------------------------------------------------------------------------
 pub(super) fn fonts() -> UiFonts {
@@ -144,15 +144,15 @@ pub(super) fn fonts() -> UiFonts {
 
 //------------------------------------------------------------------------------
 /**
- * 同じeframe画面の本文・入力・ボタン・詳細・modalに、灰色背景と四角い細枠を適用します。
+ * 同じeframe画面の本文・入力・ボタン・詳細・modalに、灰色背景と四角い細枠を適用します
  *
  * # Arguments
  *
- * - `context`: font と表示寸法・色を設定する対象画面。
+ * - `context`: font と表示寸法・色を設定する対象画面
  *
  * # Returns
  *
- * 実際に採用した font の出所。通常表示には使わず QA の記録へ渡せます。
+ * 実際に採用した font の出所。通常表示には使わず QA の記録へ渡せます
  */
 //------------------------------------------------------------------------------
 pub(super) fn configure(context: &egui::Context) -> String {
@@ -227,13 +227,13 @@ pub(super) fn configure(context: &egui::Context) -> String {
 
 //------------------------------------------------------------------------------
 /**
- * 既存widgetの意味とhit領域を変えず、内側の明暗線だけで立体枠を描きます。
+ * 既存widgetの意味とhit領域を変えず、内側の明暗線だけで立体枠を描きます
  *
  * # Arguments
  *
- * - `ui`: 枠線を描画する標準 widget と同じ UI。
- * - `response`: 枠の矩形・有効状態・focus を取得する元 widget の応答。
- * - `sunken`: `true` は押し込み、`false` は盛り上がる明暗の順序。
+ * - `ui`: 枠線を描画する標準 widget と同じ UI
+ * - `response`: 枠の矩形・有効状態・focus を取得する元 widget の応答
+ * - `sunken`: `true` は押し込み、`false` は盛り上がる明暗の順序
  */
 //------------------------------------------------------------------------------
 fn bevel(ui: &egui::Ui, response: &egui::Response, sunken: bool) {
@@ -263,11 +263,11 @@ fn bevel(ui: &egui::Ui, response: &egui::Response, sunken: bool) {
 
 //------------------------------------------------------------------------------
 /**
- * 標準egui Buttonへ立体枠とfocus枠を追加します。click/keyboard/accessibilityは元の部品に任せます。
+ * 標準egui Buttonへ立体枠とfocus枠を追加します。click/keyboard/accessibilityは元の部品に任せます
  *
  * # Returns
  *
- * 標準 button の元の応答。自作枠は入力判定と accessibility の契約を置き換えません。
+ * 標準 button の元の応答。自作枠は入力判定と accessibility の契約を置き換えません
  */
 //------------------------------------------------------------------------------
 pub(super) fn button(ui: &mut egui::Ui, button: egui::Button<'_>, enabled: bool) -> egui::Response {
@@ -289,7 +289,7 @@ pub(super) fn button(ui: &mut egui::Ui, button: egui::Button<'_>, enabled: bool)
 
 //------------------------------------------------------------------------------
 /**
- * 標準TextEditのresponseへ凹枠を描きます。入力・selection・IME・accessibilityを変更しません。
+ * 標準TextEditのresponseへ凹枠を描きます。入力・selection・IME・accessibilityを変更しません
  */
 //------------------------------------------------------------------------------
 pub(super) fn text_edit_frame(ui: &egui::Ui, response: &egui::Response) {
@@ -311,7 +311,7 @@ mod tests {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 未搭載・不正データでもNotoを両familyの先頭に維持し、別familyをMS Gothicと誤認しません。
+	 * 未搭載・不正データでもNotoを両familyの先頭に維持し、別familyをMS Gothicと誤認しません
 	 */
 	//------------------------------------------------------------------------------
 	#[test]

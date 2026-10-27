@@ -1,7 +1,7 @@
 //------------------------------------------------------------------------------
 /*!
  * - ファイル: worker.rs
- * - 概要: GUI の一操作を単一所有 thread で実行し、型付き channel で結果を返します。
+ * - 概要: GUI の一操作を単一所有 thread で実行し、型付き channel で結果を返します
  * - バージョン: 01.00.00
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
@@ -11,7 +11,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  * 本ファイルには Apache License, Version 2.0 が適用されます。
- * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください
  * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
@@ -20,12 +20,12 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
  * ```
  *
  * 備考:
  *
- * UI は join 完了まで次の worker を作りません。password の Debug・保存は行いません。
+ * UI は join 完了まで次の worker を作りません。password の Debug・保存は行いません
  */
 //------------------------------------------------------------------------------
 
@@ -44,22 +44,22 @@ use trust_repair_windows::{
 	select_java,
 };
 
-/// 診断から計画まで同じ実体を所有する、未適用の読み取り結果です。
+/// 診断から計画まで同じ実体を所有する、未適用の読み取り結果です
 pub struct Diagnosis {
-	/// 検証済みの選択 Java。
+	/// 検証済みの選択 Java
 	pub environment: JavaEnvironment,
-	/// 全群の診断。
+	/// 全群の診断
 	pub group: ScanGroup,
-	/// 部分成功を許さない変更計画。
+	/// 部分成功を許さない変更計画
 	pub plan: Result<ChangePlan, PlanError>,
-	/// 選択Java内と同Javaの従来backupだけを照合した履歴。
+	/// 選択Java内と同Javaの従来backupだけを照合した履歴
 	pub history: Vec<HistoryEntry>,
 }
 
 impl Diagnosis {
 	//------------------------------------------------------------------------------
 	/**
-	 * 診断群内の実OS権限不足だけを調べます。鍵・形式・SACL実在等を管理者不足へ変換しません。
+	 * 診断群内の実OS権限不足だけを調べます。鍵・形式・SACL実在等を管理者不足へ変換しません
 	 */
 	//------------------------------------------------------------------------------
 	pub fn needs_administrator(&self) -> bool {
@@ -71,133 +71,133 @@ impl Diagnosis {
 	}
 }
 
-/// 一操作だけに移動する認証入力です。診断後も同じ操作中だけ保持し、終了時に消去します。
+/// 一操作だけに移動する認証入力です。診断後も同じ操作中だけ保持し、終了時に消去します
 pub struct Credentials {
-	/// cacerts と、存在時に必要な jssecacerts の明示入力。
+	/// cacerts と、存在時に必要な jssecacerts の明示入力
 	pub builtin: (StorePassword, Option<StorePassword>),
-	/// 明示追加したストアとその入力。
+	/// 明示追加したストアとその入力
 	pub custom: Vec<CustomStore>,
 }
 
-/// worker に渡す一操作。秘密を含むので Debug を実装しません。
+/// worker に渡す一操作。秘密を含むので Debug を実装しません
 pub enum Command {
-	/// 内部 QA だけの、完了通知を送らず終了する worker です。
+	/// 内部 QA だけの、完了通知を送らず終了する worker です
 	#[cfg(feature = "gui-qa")]
 	QaDisconnect,
-	/// 一回の確認後に診断・計画・自動backup・無効化を連続実行します。
+	/// 一回の確認後に診断・計画・自動backup・無効化を連続実行します
 	Deactivate {
-		/// 利用者が選択した Java root。
+		/// 利用者が選択した Java root
 		root: PathBuf,
-		/// 一操作中だけ所有する認証入力。
+		/// 一操作中だけ所有する認証入力
 		credentials: Credentials,
 	},
-	/// 詳細設定からだけ読み取り診断します。
+	/// 詳細設定からだけ読み取り診断します
 	Scan {
-		/// 利用者が選んだ Java root。
+		/// 利用者が選んだ Java root
 		root: PathBuf,
-		/// 一操作中だけ所有する認証入力。
+		/// 一操作中だけ所有する認証入力
 		credentials: Credentials,
 	},
-	/// 選択 Java の直近履歴を現物照合して、復元前の一回の確認へ渡します。
+	/// 選択 Java の直近履歴を現物照合して、復元前の一回の確認へ渡します
 	PrepareRestore {
-		/// 利用者が選択した Java root。
+		/// 利用者が選択した Java root
 		root: PathBuf,
 	},
-	/// 履歴から元へ戻します。
+	/// 履歴から元へ戻します
 	Restore {
-		/// inspect で得た同じ Java root。
+		/// inspect で得た同じ Java root
 		root: PathBuf,
-		/// 検証済み履歴 ID。
+		/// 検証済み履歴 ID
 		id: String,
-		/// 復元確認に表示した実backup root。別rootの同名IDへ流用しません。
+		/// 復元確認に表示した実backup root。別rootの同名IDへ流用しません
 		backup_root: PathBuf,
-		/// 一操作中だけ所有する認証入力。
+		/// 一操作中だけ所有する認証入力
 		credentials: Credentials,
-		/// 未完了の復旧を選択したか。
+		/// 未完了の復旧を選択したか
 		recovery: bool,
 	},
-	/// 安全な保管 root だけから列挙します。
+	/// 安全な保管 root だけから列挙します
 	History {
-		/// 現在選択しているJavaのroot。
+		/// 現在選択しているJavaのroot
 		root: PathBuf,
 	},
-	/// 秘密を含まない画面結果を新規 file だけへ保存します。
+	/// 秘密を含まない画面結果を新規 file だけへ保存します
 	Save {
-		/// 利用者が指定した出力先。
+		/// 利用者が指定した出力先
 		path: PathBuf,
-		/// UI が対象範囲を限定して作った表示用 text。
+		/// UI が対象範囲を限定して作った表示用 text
 		text: String,
 	},
 }
 
-/// UI へ戻す完了結果です。
+/// UI へ戻す完了結果です
 pub enum Completed {
-	/// 読み取り診断を終えました。
+	/// 読み取り診断を終えました
 	Scan(
-		/// 完全な診断群と、その群に対応する変更計画。
+		/// 完全な診断群と、その群に対応する変更計画
 		Box<Diagnosis>,
 	),
-	/// 無効化の診断と、変更した場合だけの検証済み結果です。
+	/// 無効化の診断と、変更した場合だけの検証済み結果です
 	Deactivated {
-		/// 診断の詳細。秘密は含みません。
+		/// 診断の詳細。秘密は含みません
 		diagnosis: Box<Diagnosis>,
-		/// 対象未検出または変更不可なら None。
+		/// 対象未検出または変更不可なら None
 		outcome: Option<TransactionOutcome>,
 	},
-	/// 復元候補。対象 Java に履歴がない、または既に元状態なら None。
+	/// 復元候補。対象 Java に履歴がない、または既に元状態なら None
 	RestoreReady(
-		/// 現物照合済みの復元候補。候補がない場合は None。
+		/// 現物照合済みの復元候補。候補がない場合は None
 		Option<Box<TransactionInspection>>,
 	),
-	/// 適用・復元・復旧の検証済み結果です。
+	/// 適用・復元・復旧の検証済み結果です
 	Transaction(
-		/// 適用・復元後に backend が検証した全件の状態。
+		/// 適用・復元後に backend が検証した全件の状態
 		TransactionOutcome,
 	),
-	/// 現物照合済みの履歴です。
+	/// 現物照合済みの履歴です
 	History(
-		/// 選択 Java に対応する履歴。個別の失敗も保持します。
+		/// 選択 Java に対応する履歴。個別の失敗も保持します
 		Vec<HistoryEntry>,
 	),
-	/// 新規結果 file を保存しました。
+	/// 新規結果 file を保存しました
 	Saved(
-		/// 結果を保存したパス。保存本文や秘密は保持しません。
+		/// 結果を保存したパス。保存本文や秘密は保持しません
 		PathBuf,
 	),
 }
 
-/// worker 失敗は翻訳可能な分類とし、外部出力全文を渡しません。
+/// worker 失敗は翻訳可能な分類とし、外部出力全文を渡しません
 pub enum Failure {
-	/// Java を選択できませんでした。
+	/// Java を選択できませんでした
 	Java(
-		/// 選択 Java の型付き失敗。
+		/// 選択 Java の型付き失敗
 		JavaError,
 	),
-	/// 必要な password が未入力です。
+	/// 必要な password が未入力です
 	Process(
-		/// 秘密入力または子プロセスの型付き失敗。
+		/// 秘密入力または子プロセスの型付き失敗
 		trust_repair_windows::ProcessError,
 	),
-	/// transaction または履歴の検証失敗です。
+	/// transaction または履歴の検証失敗です
 	Transaction(
-		/// 全群の変更を開始できなかった計画理由。
+		/// 全群の変更を開始できなかった計画理由
 		TransactionError,
 	),
-	/// 結果の新規保存失敗です。
+	/// 結果の新規保存失敗です
 	Save(
-		/// 元の失敗と rollback の失敗を保持する変更結果。
+		/// 元の失敗と rollback の失敗を保持する変更結果
 		std::io::ErrorKind,
 	),
-	/// 定義を検証できませんでした。
+	/// 定義を検証できませんでした
 	Policy,
-	/// worker の panic または予期しない切断です。
+	/// worker の panic または予期しない切断です
 	Interrupted,
 }
 
 impl Failure {
 	//------------------------------------------------------------------------------
 	/**
-	 * 型付きの実権限不足を、下位原因とrollback原因も含めて主画面の案内へ伝えます。
+	 * 型付きの実権限不足を、下位原因とrollback原因も含めて主画面の案内へ伝えます
 	 */
 	//------------------------------------------------------------------------------
 	pub fn needs_administrator(&self) -> bool {
@@ -214,7 +214,7 @@ impl Failure {
 
 //------------------------------------------------------------------------------
 /**
- * WindowsのAccessDenied・特権未割当て・PrivilegeNotHeldだけを権限不足として扱います。
+ * WindowsのAccessDenied・特権未割当て・PrivilegeNotHeldだけを権限不足として扱います
  */
 //------------------------------------------------------------------------------
 fn permission_code(code: Option<i32>) -> bool {
@@ -223,7 +223,7 @@ fn permission_code(code: Option<i32>) -> bool {
 
 //------------------------------------------------------------------------------
 /**
- * file安全性の仕様非対応と、OSが返した実権限不足を区別します。
+ * file安全性の仕様非対応と、OSが返した実権限不足を区別します
  */
 //------------------------------------------------------------------------------
 fn file_permission(value: &trust_repair_windows::FileSafetyError) -> bool {
@@ -232,7 +232,7 @@ fn file_permission(value: &trust_repair_windows::FileSafetyError) -> bool {
 
 //------------------------------------------------------------------------------
 /**
- * keytool本文や終了文字列を解析せず、起動時OS codeだけを権限不足へ分類します。
+ * keytool本文や終了文字列を解析せず、起動時OS codeだけを権限不足へ分類します
  */
 //------------------------------------------------------------------------------
 fn process_permission(value: &trust_repair_windows::ProcessError) -> bool {
@@ -246,7 +246,7 @@ fn process_permission(value: &trust_repair_windows::ProcessError) -> bool {
 
 //------------------------------------------------------------------------------
 /**
- * Java選択の下位file/processの実権限不足を保ちます。
+ * Java選択の下位file/processの実権限不足を保ちます
  */
 //------------------------------------------------------------------------------
 fn java_permission(value: &JavaError) -> bool {
@@ -260,7 +260,7 @@ fn java_permission(value: &JavaError) -> bool {
 
 //------------------------------------------------------------------------------
 /**
- * 全件診断の型付き原因からだけ、管理者起動案内の必要性を返します。
+ * 全件診断の型付き原因からだけ、管理者起動案内の必要性を返します
  */
 //------------------------------------------------------------------------------
 fn scan_permission(value: &trust_repair_windows::ScanFailure) -> bool {
@@ -275,7 +275,7 @@ fn scan_permission(value: &trust_repair_windows::ScanFailure) -> bool {
 
 //------------------------------------------------------------------------------
 /**
- * transactionの分類・OS code・各下位原因を調べ、SACL実在や複雑ACLとは区別します。
+ * transactionの分類・OS code・各下位原因を調べ、SACL実在や複雑ACLとは区別します
  */
 //------------------------------------------------------------------------------
 fn transaction_permission(value: &TransactionError) -> bool {
@@ -288,56 +288,56 @@ fn transaction_permission(value: &TransactionError) -> bool {
 		|| value.rollback_errors.iter().any(transaction_permission)
 }
 
-/// 所有 worker からの型付き通知です。
+/// 所有 worker からの型付き通知です
 pub enum Event {
-	/// 実際の診断工程です。
+	/// 実際の診断工程です
 	Scan(
-		/// 呼出し側の表示言語で案内する工程名。
+		/// 呼出し側の表示言語で案内する工程名
 		ScanProgress,
 	),
-	/// 実際の書換え工程と中断可否です。
+	/// 実際の書換え工程と中断可否です
 	Transaction(
-		/// この工程中に安全な中断を受け付けるか。
+		/// この工程中に安全な中断を受け付けるか
 		TransactionProgress,
 	),
-	/// 成功・失敗を混同しない一度だけの完了結果です。
+	/// 成功・失敗を混同しない一度だけの完了結果です
 	Done(
-		/// thread 回収後に一度だけ採用する操作の完了結果。
+		/// thread 回収後に一度だけ採用する操作の完了結果
 		Result<Completed, Failure>,
 	),
 }
 
-/// UI が join するまで所有する worker です。
+/// UI が join するまで所有する worker です
 pub struct Worker {
-	/// UI が停止要求を共有する token。
+	/// UI が停止要求を共有する token
 	pub cancellation: Cancellation,
-	/// この操作の通知受信先。
+	/// この操作の通知受信先
 	pub receiver: Receiver<Event>,
-	/// 完了時とアプリ終了時に必ず回収する thread。
+	/// 完了時とアプリ終了時に必ず回収する thread
 	pub handle: JoinHandle<()>,
 }
 
 //------------------------------------------------------------------------------
 /**
- * 一操作の所有権を worker へ移します。thread 起動失敗時は秘密を drop して OS error を返します。
+ * 一操作の所有権を worker へ移します。thread 起動失敗時は秘密を drop して OS error を返します
  *
  * # Arguments
  *
- * - `command`: 秘密を含む一操作の所有入力。開始した thread が受け取ります。
- * - `options`: 従来履歴 root と明示設定。thread の終了まで所有します。
- * - `context`: 通知送信後の再描画に使用する複製可能な context。
+ * - `command`: 秘密を含む一操作の所有入力。開始した thread が受け取ります
+ * - `options`: 従来履歴 root と明示設定。thread の終了まで所有します
+ * - `context`: 通知送信後の再描画に使用する複製可能な context
  *
  * # Returns
  *
- * 中断 token、通知 receiver、必ず join する thread の所有者。
+ * 中断 token、通知 receiver、必ず join する thread の所有者
  *
  * # Errors
  *
- * thread の開始失敗。移動した命令と秘密は破棄され、実行は開始しません。
+ * thread の開始失敗。移動した命令と秘密は破棄され、実行は開始しません
  *
  * # Notes
  *
- * 命令終了後に Done を送ります。受信側の消滅で送信が失敗しても、操作の後始末は継続します。
+ * 命令終了後に Done を送ります。受信側の消滅で送信が失敗しても、操作の後始末は継続します
  */
 //------------------------------------------------------------------------------
 pub fn start(
@@ -375,24 +375,24 @@ pub fn start(
 
 //------------------------------------------------------------------------------
 /**
- * 同じ worker で全 I/O を実行します。秘密の借用は操作内に限定し、完了前に所有入力を drop します。
+ * 同じ worker で全 I/O を実行します。秘密の借用は操作内に限定し、完了前に所有入力を drop します
  *
  * # Arguments
  *
- * - `command`: 今回実行する所有入力。認証は操作中だけ借用します。
- * - `options`: 従来 root の参照と、許可した復元元の確認に用いる設定。
- * - `cancellation`: 安全な工程で受け付ける共有中断要求。
- * - `sender`: 同じ操作の工程通知先。
- * - `context`: 工程通知に伴う再描画の要求先。
+ * - `command`: 今回実行する所有入力。認証は操作中だけ借用します
+ * - `options`: 従来 root の参照と、許可した復元元の確認に用いる設定
+ * - `cancellation`: 安全な工程で受け付ける共有中断要求
+ * - `sender`: 同じ操作の工程通知先
+ * - `context`: 工程通知に伴う再描画の要求先
  *
  * # Returns
  *
- * 実際の命令種別に対応する完了結果。
+ * 実際の命令種別に対応する完了結果
  *
  * # Errors
  *
  * Java 選択・認証対応・履歴・診断準備・変更処理・新規保存の失敗。
- * 変更処理の部分状態と rollback 失敗は下位の型付きエラーを保持します。
+ * 変更処理の部分状態と rollback 失敗は下位の型付きエラーを保持します
  */
 //------------------------------------------------------------------------------
 fn execute(
@@ -559,25 +559,25 @@ fn execute(
 
 //------------------------------------------------------------------------------
 /**
- * 同じ Java と明示入力で群全体を診断します。失敗・警告を含む plan は適用へ進めません。
+ * 同じ Java と明示入力で群全体を診断します。失敗・警告を含む plan は適用へ進めません
  *
  * # Arguments
  *
- * - `root`: 利用者が選択した Java の元パス。
- * - `credentials`: 標準二種と明示 custom の認証入力。
- * - `legacy_options`: 同じ Java に属する従来履歴の参照先。
- * - `cancellation`: Java と各 keytool 実行で監視する中断要求。
- * - `sender`: 診断の工程通知先。
- * - `context`: 通知後の再描画先。
+ * - `root`: 利用者が選択した Java の元パス
+ * - `credentials`: 標準二種と明示 custom の認証入力
+ * - `legacy_options`: 同じ Java に属する従来履歴の参照先
+ * - `cancellation`: Java と各 keytool 実行で監視する中断要求
+ * - `sender`: 診断の工程通知先
+ * - `context`: 通知後の再描画先
  *
  * # Returns
  *
  * Java・全診断群・計画の成否・対応履歴を所有する結果。
- * 個々のストアの診断失敗は群内に残し、計画の失敗として保持します。
+ * 個々のストアの診断失敗は群内に残し、計画の失敗として保持します
  *
  * # Errors
  *
- * Java・履歴の取得、または実在する jssecacerts の明示入力不足。
+ * Java・履歴の取得、または実在する jssecacerts の明示入力不足
  */
 //------------------------------------------------------------------------------
 fn diagnose(
@@ -621,20 +621,20 @@ fn diagnose(
 
 //------------------------------------------------------------------------------
 /**
- * Java内履歴と同じJavaの従来履歴を読み取ります。directoryは作成せず、未知の旧記録は詳細へ残します。
+ * Java内履歴と同じJavaの従来履歴を読み取ります。directoryは作成せず、未知の旧記録は詳細へ残します
  *
  * # Arguments
  *
- * - `environment`: 履歴の保存時 Java と一致すべき選択結果。
- * - `legacy_options`: 同じ Java の旧履歴を探す従来 root。
+ * - `environment`: 履歴の保存時 Java と一致すべき選択結果
+ * - `legacy_options`: 同じ Java の旧履歴を探す従来 root
  *
  * # Returns
  *
- * 同じ Java の履歴を ID 降順に並べ、その後に未帰属・不正な旧記録を残した一覧。
+ * 同じ Java の履歴を ID 降順に並べ、その後に未帰属・不正な旧記録を残した一覧
  *
  * # Errors
  *
- * Java 内履歴の読込み・個別照合失敗、または従来 root の実権限不足。
+ * Java 内履歴の読込み・個別照合失敗、または従来 root の実権限不足
  */
 //------------------------------------------------------------------------------
 fn history_for_java(
@@ -679,21 +679,21 @@ fn history_for_java(
 
 //------------------------------------------------------------------------------
 /**
- * 検証済み store 順へ明示入力を対応させます。未知の path で別passwordを自動試行しません。
+ * 検証済み store 順へ明示入力を対応させます。未知の path で別passwordを自動試行しません
  *
  * # Arguments
  *
- * - `environment`: 標準ストアの canonical path を求める選択済み Java。
- * - `paths`: 返す認証の順序を決める、検証済みの対象パス。
- * - `credentials`: 返す秘密の参照を所有する一操作分の認証入力。
+ * - `environment`: 標準ストアの canonical path を求める選択済み Java
+ * - `paths`: 返す認証の順序を決める、検証済みの対象パス
+ * - `credentials`: 返す秘密の参照を所有する一操作分の認証入力
  *
  * # Returns
  *
- * paths と同じ順に並べた秘密の借用。新しい秘密を生成・保存しません。
+ * paths と同じ順に並べた秘密の借用。新しい秘密を生成・保存しません
  *
  * # Errors
  *
- * 供給済みパスの正規化失敗、または対象に対応する認証入力がない場合。
+ * 供給済みパスの正規化失敗、または対象に対応する認証入力がない場合
  */
 //------------------------------------------------------------------------------
 fn passwords_for<'a>(
@@ -740,7 +740,7 @@ fn passwords_for<'a>(
 
 //------------------------------------------------------------------------------
 /**
- * 型付き工程を送信し再描画を要求します。受信側が消えても backend の後始末は継続します。
+ * 型付き工程を送信し再描画を要求します。受信側が消えても backend の後始末は継続します
  */
 //------------------------------------------------------------------------------
 fn notify(sender: &Sender<Event>, context: &eframe::egui::Context, event: Event) {
@@ -748,14 +748,14 @@ fn notify(sender: &Sender<Event>, context: &eframe::egui::Context, event: Event)
 	context.request_repaint();
 }
 
-/// 実Javaを受け付けない明示fixtureで、旧rootとの互換復元を縦に検証します。
+/// 実Javaを受け付けない明示fixtureで、旧rootとの互換復元を縦に検証します
 #[cfg(test)]
 mod tests {
 	use super::*;
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 既存を上書きせず、通常file/directoryだけを所有試験領域へコピーします。
+	 * 既存を上書きせず、通常file/directoryだけを所有試験領域へコピーします
 	 */
 	//------------------------------------------------------------------------------
 	fn copy_fixture(source: &std::path::Path, destination: &std::path::Path) {
@@ -776,7 +776,7 @@ mod tests {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * fixtureの非秘密passwordだけを、一操作の所有入力へ渡します。
+	 * fixtureの非秘密passwordだけを、一操作の所有入力へ渡します
 	 */
 	//------------------------------------------------------------------------------
 	fn credentials(root: &std::path::Path) -> Credentials {
@@ -796,7 +796,7 @@ mod tests {
 	//------------------------------------------------------------------------------
 	/**
 	 * 専用の旧 LocalAppData 相当 root を同じ Java にだけ対応させます。
-	 * 旧 root からの復元後、新規保存先が Java 内に限定されることを確認します。
+	 * 旧 root からの復元後、新規保存先が Java 内に限定されることを確認します
 	 */
 	//------------------------------------------------------------------------------
 	#[test]

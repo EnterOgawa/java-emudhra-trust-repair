@@ -1,7 +1,7 @@
 //------------------------------------------------------------------------------
 /*!
  * - ファイル: transaction.rs
- * - 概要: 検証済み診断から backup・順次適用・rollback・復元を実行します。
+ * - 概要: 検証済み診断から backup・順次適用・rollback・復元を実行します
  * - バージョン: 01.00.00
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
@@ -11,7 +11,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  * 本ファイルには Apache License, Version 2.0 が適用されます。
- * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください
  * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
@@ -20,14 +20,14 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
  * ```
  *
  * 備考:
  *
  * 同期 worker 用です。複数 file 全体の atomicity や電源断時の完全永続化は保証しません。
  * 確定・rollback・復元確定中は cancel を受理せず終了まで待ちます。
- * 実行時の password は保持・保存しません。同権限の敵対的 process への防御境界ではありません。
+ * 実行時の password は保持・保存しません。同権限の敵対的 process への防御境界ではありません
  */
 //------------------------------------------------------------------------------
 
@@ -53,161 +53,161 @@ use crate::transaction_io::{self as native, IoFailure};
 // ID は時刻/process/同 process 内番号で作り、新規 directory の OS 排他でも衝突を拒否する
 static NEXT_ID: AtomicU32 = AtomicU32::new(0);
 
-/// 日英 UI が翻訳する、実際に実行している工程です。
+/// 日英 UI が翻訳する、実際に実行している工程です
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransactionPhase {
-	/// 診断・定義・Java・元実体を再検査しています。
+	/// 診断・定義・Java・元実体を再検査しています
 	Validate,
-	/// 別 instance と通常 write を抑止しています。
+	/// 別 instance と通常 write を抑止しています
 	Lock,
-	/// 新規 backup と読戻しを確認しています。
+	/// 新規 backup と読戻しを確認しています
 	Backup,
-	/// 同 volume stage にだけ削除し全件を照合しています。
+	/// 同 volume stage にだけ削除し全件を照合しています
 	Stage,
-	/// immutable manifest を保存しています。
+	/// immutable manifest を保存しています
 	Prepare,
-	/// journal を flush/sync しています。
+	/// journal を flush/sync しています
 	Journal,
-	/// Windows 置換を実行しています。中断は受け付けません。
+	/// Windows 置換を実行しています。中断は受け付けません
 	Commit,
-	/// 実 path の内容と metadata を再検査しています。
+	/// 実 path の内容と metadata を再検査しています
 	Verify,
-	/// 変更済み item を逆順で戻しています。中断は受け付けません。
+	/// 変更済み item を逆順で戻しています。中断は受け付けません
 	Rollback,
-	/// 正規の復元を準備・実行しています。
+	/// 正規の復元を準備・実行しています
 	Restore,
-	/// 履歴の整合性と現在の状態を調べています。
+	/// 履歴の整合性と現在の状態を調べています
 	History,
-	/// 未完了 transaction を実体から復旧しています。
+	/// 未完了 transaction を実体から復旧しています
 	Recovery,
-	/// 全件の処理を終了しました。
+	/// 全件の処理を終了しました
 	Complete,
 }
 
-/// transaction の主状態。自由文から成功を推測する必要はありません。
+/// transaction の主状態。自由文から成功を推測する必要はありません
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransactionState {
-	/// 元対象を変更する前に終了しました。
+	/// 元対象を変更する前に終了しました
 	Aborted,
-	/// 全 stage と manifest を保存しました。
+	/// 全 stage と manifest を保存しました
 	Prepared,
-	/// 一件ずつ確定中です。
+	/// 一件ずつ確定中です
 	Committing,
-	/// 全件の適用と検証が成功しました。
+	/// 全件の適用と検証が成功しました
 	Applied,
-	/// 逆順 rollback 中です。
+	/// 逆順 rollback 中です
 	RollingBack,
-	/// 変更前の byte/metadata を全件で確認しました。
+	/// 変更前の byte/metadata を全件で確認しました
 	RolledBack,
-	/// 復元中です。
+	/// 復元中です
 	Restoring,
-	/// 変更前の全件を復元・検証しました。
+	/// 変更前の全件を復元・検証しました
 	Restored,
-	/// 既に変更前の完全な状態です。対象の書換えを行っていません。
+	/// 既に変更前の完全な状態です。対象の書換えを行っていません
 	AlreadyRestored,
-	/// 部分状態または未知状態があり、自動上書きを止めました。
+	/// 部分状態または未知状態があり、自動上書きを止めました
 	RecoveryRequired,
 }
 
-/// 日英 UI 用の安定した失敗分類です。
+/// 日英 UI 用の安定した失敗分類です
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransactionCode {
-	/// 他のアプリ instance が対象を操作中です。
+	/// 他のアプリ instance が対象を操作中です
 	Busy,
-	/// 確定前に中断されました。
+	/// 確定前に中断されました
 	Cancelled,
-	/// 診断群と計画または password 数が一致しません。
+	/// 診断群と計画または password 数が一致しません
 	InvalidPlan,
-	/// 選択した Java が診断/適用時から変わりました。
+	/// 選択した Java が診断/適用時から変わりました
 	StaleJava,
-	/// Java 内 backup が保存時と異なる Java フォルダへ移動・コピーされています。
+	/// Java 内 backup が保存時と異なる Java フォルダへ移動・コピーされています
 	BackupLocationMismatch,
-	/// 診断後に元実体が変わりました。
+	/// 診断後に元実体が変わりました
 	StaleScan,
-	/// ファイルの安全性条件を満たしません。
+	/// ファイルの安全性条件を満たしません
 	UnsafeFile,
-	/// SACL/追加 metadata の不存在または保持を確認できません。
+	/// SACL/追加 metadata の不存在または保持を確認できません
 	UnsupportedMetadata,
-	/// 書換え/置換に必要な権限がありません。
+	/// 書換え/置換に必要な権限がありません
 	PermissionDenied,
-	/// ファイル操作または永続化の OS 失敗です。
+	/// ファイル操作または永続化の OS 失敗です
 	Io,
-	/// keytool の起動/終了/警告/一覧解析を検証できません。
+	/// keytool の起動/終了/警告/一覧解析を検証できません
 	Keytool,
-	/// 差分、形式、全 inventory または metadata が一致しません。
+	/// 差分、形式、全 inventory または metadata が一致しません
 	VerificationFailed,
-	/// schema、ID、path、列挙値、重複等が不正です。
+	/// schema、ID、path、列挙値、重複等が不正です
 	InvalidManifest,
-	/// journal の順序/状態/完全行が不正です。
+	/// journal の順序/状態/完全行が不正です
 	InvalidJournal,
-	/// 元 backup の byte hash が一致しません。
+	/// 元 backup の byte hash が一致しません
 	BackupCorrupt,
-	/// 適用後の外部変更または未知実体があり上書きを拒否します。
+	/// 適用後の外部変更または未知実体があり上書きを拒否します
 	ExternalChange,
-	/// 一意な自動復旧を決定できません。
+	/// 一意な自動復旧を決定できません
 	RecoveryRequired,
-	/// 明示された試験境界での失敗です。
+	/// 明示された試験境界での失敗です
 	InjectedFailure,
 }
 
-/// 書換えを試行した API の戻り値だけで判断せず調べた artifact の証拠です。
+/// 書換えを試行した API の戻り値だけで判断せず調べた artifact の証拠です
 #[derive(Debug)]
 pub struct ArtifactEvidence {
-	/// 調べた target/stage/recovery の path。
+	/// 調べた target/stage/recovery の path
 	pub path: PathBuf,
-	/// 安全な通常 file として読めた場合の全 byte hash。
+	/// 安全な通常 file として読めた場合の全 byte hash
 	pub sha256: Option<String>,
-	/// 読めない/欠落/未知属性の型付き理由。
+	/// 読めない/欠落/未知属性の型付き理由
 	pub failure: Option<FileSafetyError>,
 }
 
-/// 元の失敗と rollback の失敗を両方保持する、UI 向けの失敗結果です。
+/// 元の失敗と rollback の失敗を両方保持する、UI 向けの失敗結果です
 #[derive(Debug)]
 pub struct TransactionError {
-	/// 翻訳可能な主分類。
+	/// 翻訳可能な主分類
 	pub code: TransactionCode,
-	/// 失敗した実工程。
+	/// 失敗した実工程
 	pub phase: TransactionPhase,
-	/// この失敗後に確認できた群の状態。
+	/// この失敗後に確認できた群の状態
 	pub state: TransactionState,
-	/// 大きい OS/診断詳細を所有する context。Deref でも各 field を参照できます。
+	/// 大きい OS/診断詳細を所有する context。Deref でも各 field を参照できます
 	pub context: Box<TransactionContext>,
-	/// 復旧の各失敗。主失敗を置き換えません。
+	/// 復旧の各失敗。主失敗を置き換えません
 	pub rollback_errors: Vec<TransactionError>,
 }
 
-/// エラーの対象・原因・置換失敗の現物証拠です。password は保持しません。
+/// エラーの対象・原因・置換失敗の現物証拠です。password は保持しません
 #[derive(Debug)]
 pub struct TransactionContext {
-	/// backup 作成後なら選択できる transaction ID。
+	/// backup 作成後なら選択できる transaction ID
 	pub transaction_id: Option<String>,
-	/// manifest/計画内の item 位置。
+	/// manifest/計画内の item 位置
 	pub item: Option<usize>,
-	/// 関連 path。秘密や外部 stdout/stderr は含めません。
+	/// 関連 path。秘密や外部 stdout/stderr は含めません
 	pub path: Option<PathBuf>,
-	/// 直接の Windows code。
+	/// 直接の Windows code
 	pub os_code: Option<i32>,
-	/// 元のファイル安全性分類。
+	/// 元のファイル安全性分類
 	pub file_error: Option<FileSafetyError>,
-	/// 元のプロセス分類。
+	/// 元のプロセス分類
 	pub process_error: Option<ProcessError>,
-	/// 元の計画分類。
+	/// 元の計画分類
 	pub plan_error: Option<PlanError>,
-	/// 元の Java 分類。
+	/// 元の Java 分類
 	pub java_error: Option<JavaError>,
-	/// 元の厳密一覧検証分類。
+	/// 元の厳密一覧検証分類
 	pub scan_error: Option<ScanFailure>,
-	/// 置換が失敗しても実 path/stage/recovery を調べた証拠。
+	/// 置換が失敗しても実 path/stage/recovery を調べた証拠
 	pub evidence: Vec<ArtifactEvidence>,
 }
 
 impl std::ops::Deref for TransactionError {
-	/// 主原因とは別に所有する、対象位置・下位原因・復旧証拠の参照先です。
+	/// 主原因とは別に所有する、対象位置・下位原因・復旧証拠の参照先です
 	type Target = TransactionContext;
 
 	//------------------------------------------------------------------------------
 	/**
-	 * code/phase と同じ読みやすさで所有 context の field を参照します。
+	 * code/phase と同じ読みやすさで所有 context の field を参照します
 	 */
 	//------------------------------------------------------------------------------
 	fn deref(&self) -> &Self::Target {
@@ -218,7 +218,7 @@ impl std::ops::Deref for TransactionError {
 impl std::ops::DerefMut for TransactionError {
 	//------------------------------------------------------------------------------
 	/**
-	 * 内部処理が最初の原因を失わず context を補足できる可変参照を返します。
+	 * 内部処理が最初の原因を失わず context を補足できる可変参照を返します
 	 */
 	//------------------------------------------------------------------------------
 	fn deref_mut(&mut self) -> &mut Self::Target {
@@ -229,7 +229,7 @@ impl std::ops::DerefMut for TransactionError {
 impl TransactionError {
 	//------------------------------------------------------------------------------
 	/**
-	 * 秘密を含まない型付き失敗を、元対象を未変更の既定状態で生成します。
+	 * 秘密を含まない型付き失敗を、元対象を未変更の既定状態で生成します
 	 */
 	//------------------------------------------------------------------------------
 	pub(crate) fn new(code: TransactionCode, phase: TransactionPhase) -> Self {
@@ -255,7 +255,7 @@ impl TransactionError {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * OS code と context を保持し、外部エラーの自由文を保存しません。
+	 * OS code と context を保持し、外部エラーの自由文を保存しません
 	 */
 	//------------------------------------------------------------------------------
 	pub(crate) fn io(phase: TransactionPhase, path: &Path, error: std::io::Error) -> Self {
@@ -275,7 +275,7 @@ impl TransactionError {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 元 snapshot の失敗分類を失わずに返します。
+	 * 元 snapshot の失敗分類を失わずに返します
 	 */
 	//------------------------------------------------------------------------------
 	pub(crate) fn file(phase: TransactionPhase, path: &Path, error: FileSafetyError) -> Self {
@@ -304,15 +304,15 @@ impl TransactionError {
 impl std::fmt::Display for TransactionError {
 	//------------------------------------------------------------------------------
 	/**
-	 * 開発向けに固定 code/工程だけを表示します。UI は公開 field から翻訳します。
+	 * 開発向けに固定 code/工程だけを表示します。UI は公開 field から翻訳します
 	 *
 	 * # Returns
 	 *
-	 * 出力先の書込みに成功すれば `Ok(())`。
+	 * 出力先の書込みに成功すれば `Ok(())`
 	 *
 	 * # Errors
 	 *
-	 * 出力先の `fmt::Error` を伝播します。途中までの出力は取り消しません。
+	 * 出力先の `fmt::Error` を伝播します。途中までの出力は取り消しません
 	 */
 	//------------------------------------------------------------------------------
 	fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -326,155 +326,155 @@ impl std::fmt::Display for TransactionError {
 
 impl std::error::Error for TransactionError {}
 
-/// 同期 callback に通知する実工程です。
+/// 同期 callback に通知する実工程です
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TransactionProgress {
-	/// 現在の工程。
+	/// 現在の工程
 	pub phase: TransactionPhase,
-	/// 0 始まりの item 位置。群の工程は None。
+	/// 0 始まりの item 位置。群の工程は None
 	pub item: Option<usize>,
-	/// 変更予定 item 総数。
+	/// 変更予定 item 総数
 	pub item_count: usize,
-	/// この工程で cancel を受け付けるか。
+	/// この工程で cancel を受け付けるか
 	pub cancellable: bool,
 }
 
-/// 正常結果です。Applied/Restored は全件検証後にしか返しません。
+/// 正常結果です。Applied/Restored は全件検証後にしか返しません
 #[derive(Debug)]
 pub struct TransactionOutcome {
-	/// 履歴と復元選択に使う ID。
+	/// 履歴と復元選択に使う ID
 	pub transaction_id: String,
-	/// 検証済みの最終状態。
+	/// 検証済みの最終状態
 	pub state: TransactionState,
-	/// 元 raw byte と証跡が残る directory。
+	/// 元 raw byte と証跡が残る directory
 	pub backup_directory: PathBuf,
-	/// 実際の対象 path 一覧。
+	/// 実際の対象 path 一覧
 	pub stores: Vec<PathBuf>,
-	/// UI が Java の再起動案内を表示する必要があります。
+	/// UI が Java の再起動案内を表示する必要があります
 	pub restart_required: bool,
 }
 
-/// 実体から判別した item の現在状態です。
+/// 実体から判別した item の現在状態です
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ItemState {
-	/// 元の hash と保持 metadata/更新日時に一致します。
+	/// 元の hash と保持 metadata/更新日時に一致します
 	Original,
-	/// 記録した適用後 hash と保持 metadata/更新日時に一致します。
+	/// 記録した適用後 hash と保持 metadata/更新日時に一致します
 	Applied,
-	/// path が欠落しています。
+	/// path が欠落しています
 	Missing,
-	/// 未知の内容/metadata、リンク、取得不能等です。
+	/// 未知の内容/metadata、リンク、取得不能等です
 	Unknown,
 }
 
-/// journal と実体の両方を照合した履歴状態です。
+/// journal と実体の両方を照合した履歴状態です
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HistoryState {
-	/// 完了記録と全適用後状態が一致します。
+	/// 完了記録と全適用後状態が一致します
 	Applied,
-	/// 完了記録と全元状態が一致します。
+	/// 完了記録と全元状態が一致します
 	Restored,
-	/// rollback 記録と全元状態が一致します。
+	/// rollback 記録と全元状態が一致します
 	RolledBack,
-	/// 未完了ですが、既知 hash/metadata から元へ一意に戻せます。
+	/// 未完了ですが、既知 hash/metadata から元へ一意に戻せます
 	Recoverable,
-	/// 欠落/未知/整合性違反があり上書きしません。
+	/// 欠落/未知/整合性違反があり上書きしません
 	RecoveryRequired,
-	/// manifest 保存前です。元 path を推測しません。
+	/// manifest 保存前です。元 path を推測しません
 	IncompletePreparation,
-	/// manifest/journal/保管 directory が不正です。
+	/// manifest/journal/保管 directory が不正です
 	Invalid,
 }
 
-/// 履歴選択前に得られる、秘密を持たない完全な検査結果です。
+/// 履歴選択前に得られる、秘密を持たない完全な検査結果です
 #[derive(Debug)]
 pub struct TransactionInspection {
-	/// directory と一致する ID。
+	/// directory と一致する ID
 	pub transaction_id: String,
-	/// この検査を実行した元の backup directory。復元先設定を明示拘束します。
+	/// この検査を実行した元の backup directory。復元先設定を明示拘束します
 	pub backup_directory: PathBuf,
-	/// 全群の判定。
+	/// 全群の判定
 	pub state: HistoryState,
-	/// manifest の順の現在状態。
+	/// manifest の順の現在状態
 	pub items: Vec<ItemState>,
-	/// password を再入力する対象 path の順序。
+	/// password を再入力する対象 path の順序
 	pub stores: Vec<PathBuf>,
-	/// 選択し直す Java root。
+	/// 選択し直す Java root
 	pub java_root: PathBuf,
-	/// 最新の実在 journal に末尾破断があります。初回 journal の未作成は含めません。
+	/// 最新の実在 journal に末尾破断があります。初回 journal の未作成は含めません
 	pub torn_journal: bool,
-	/// 保存した release/java/keytool の現在 snapshot も一致するか。
+	/// 保存した release/java/keytool の現在 snapshot も一致するか
 	pub java_unchanged: bool,
 }
 
-/// 不正な一件があっても他の履歴を隠さない列挙結果です。
+/// 不正な一件があっても他の履歴を隠さない列挙結果です
 #[derive(Debug)]
 pub struct HistoryEntry {
-	/// 選択できる directory 名。
+	/// 選択できる directory 名
 	pub transaction_id: String,
-	/// 正常な検査結果または型付き拒否理由。
+	/// 正常な検査結果または型付き拒否理由
 	pub inspection: Result<TransactionInspection, TransactionError>,
 }
 
-/// I/O 失敗の契約を隔離試験する境界です。GUI の操作には使いません。
+/// I/O 失敗の契約を隔離試験する境界です。GUI の操作には使いません
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureBoundary {
-	/// 元 backup 保存直後。
+	/// 元 backup 保存直後
 	Backup,
-	/// stage 検証直後。
+	/// stage 検証直後
 	Stage,
-	/// immutable manifest 保存直後。
+	/// immutable manifest 保存直後
 	Manifest,
-	/// journal の各追記直前。
+	/// journal の各追記直前
 	Journal,
-	/// target の置換直前。
+	/// target の置換直前
 	BeforeCommit,
-	/// target の置換・検証直後。
+	/// target の置換・検証直後
 	AfterCommit,
-	/// 逆順 rollback 直前。
+	/// 逆順 rollback 直前
 	BeforeRollback,
-	/// 復元置換直前。
+	/// 復元置換直前
 	BeforeRestore,
-	/// 復元置換・検証直後。
+	/// 復元置換・検証直後
 	AfterRestore,
 }
 
-/// 一つの明示的な失敗注入指定です。
+/// 一つの明示的な失敗注入指定です
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FailurePoint {
-	/// 注入する境界。
+	/// 注入する境界
 	pub boundary: FailureBoundary,
-	/// item の位置。群の境界は None。
+	/// item の位置。群の境界は None
 	pub item: Option<usize>,
 }
 
-/// 保管場所と試験注入だけを持つ設定です。password は含みません。
+/// 保管場所と試験注入だけを持つ設定です。password は含みません
 #[derive(Debug, Clone)]
 pub struct TransactionOptions {
-	/// 新規GUI操作では選択Java内の emudhra-backup。
+	/// 新規GUI操作では選択Java内の emudhra-backup
 	backup_root: PathBuf,
-	/// Java内rootを選択した場合にだけ要求する保存時Java。
+	/// Java内rootを選択した場合にだけ要求する保存時Java
 	java_root: Option<PathBuf>,
-	/// 隔離検証のため明示した失敗境界。
+	/// 隔離検証のため明示した失敗境界
 	failures: Vec<FailurePoint>,
 }
 
 impl TransactionOptions {
 	//------------------------------------------------------------------------------
 	/**
-	 * 選択済みJava内の固定backup rootへ拘束します。読み取りやdirectory作成は行いません。
+	 * 選択済みJava内の固定backup rootへ拘束します。読み取りやdirectory作成は行いません
 	 *
 	 * # Arguments
 	 *
-	 * - `environment`: 選択済み Java。保存先と保存時 Java の両方をこの root に拘束します。
+	 * - `environment`: 選択済み Java。保存先と保存時 Java の両方をこの root に拘束します
 	 *
 	 * # Returns
 	 *
-	 * 選択 Java 内の `emudhra-backup` を使う設定。
+	 * 選択 Java 内の `emudhra-backup` を使う設定
 	 *
 	 * # Errors
 	 *
-	 * 構成した保存先が許可する絶対 DOS パスの形式でない場合。
+	 * 構成した保存先が許可する絶対 DOS パスの形式でない場合
 	 */
 	//------------------------------------------------------------------------------
 	pub fn for_java(environment: &JavaEnvironment) -> Result<Self, TransactionError> {
@@ -485,15 +485,15 @@ impl TransactionOptions {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 従来版の本人用backup rootを参照します。互換履歴用で、directoryを作りません。
+	 * 従来版の本人用backup rootを参照します。互換履歴用で、directoryを作りません
 	 *
 	 * # Returns
 	 *
-	 * LOCALAPPDATA 配下の従来保存先を使う、Java を未拘束の設定。
+	 * LOCALAPPDATA 配下の従来保存先を使う、Java を未拘束の設定
 	 *
 	 * # Errors
 	 *
-	 * LOCALAPPDATA が未設定、または構成したパスが許可形式でない場合。
+	 * LOCALAPPDATA が未設定、または構成したパスが許可形式でない場合
 	 */
 	//------------------------------------------------------------------------------
 	pub fn local_app_data() -> Result<Self, TransactionError> {
@@ -504,15 +504,15 @@ impl TransactionOptions {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 明示した専用 root を使います。隔離試験に利用でき、既存 ACL を広げることはありません。
+	 * 明示した専用 root を使います。隔離試験に利用でき、既存 ACL を広げることはありません
 	 *
 	 * # Arguments
 	 *
-	 * - `backup_root`: 設定が所有する専用保存先の絶対 DOS パス。
+	 * - `backup_root`: 設定が所有する専用保存先の絶対 DOS パス
 	 *
 	 * # Errors
 	 *
-	 * パスの字句検証に失敗した場合。ここでは存在・ACL・書込み可能性を保証しません。
+	 * パスの字句検証に失敗した場合。ここでは存在・ACL・書込み可能性を保証しません
 	 */
 	//------------------------------------------------------------------------------
 	pub fn with_backup_root(backup_root: PathBuf) -> Result<Self, TransactionError> {
@@ -532,7 +532,7 @@ impl TransactionOptions {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 適用前の UI に表示できる保管 root を返します。
+	 * 適用前の UI に表示できる保管 root を返します
 	 */
 	//------------------------------------------------------------------------------
 	pub fn backup_root(&self) -> &Path {
@@ -541,15 +541,15 @@ impl TransactionOptions {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 隔離試験の境界を追加します。通常の GUI はこの設定を行いません。
+	 * 隔離試験の境界を追加します。通常の GUI はこの設定を行いません
 	 *
 	 * # Arguments
 	 *
-	 * - `point`: 失敗を注入する工程境界と、必要な場合は 0 始まりの item 位置。
+	 * - `point`: 失敗を注入する工程境界と、必要な場合は 0 始まりの item 位置
 	 *
 	 * # Returns
 	 *
-	 * 境界を一件追加した設定。元の設定の所有権を引き継ぎます。
+	 * 境界を一件追加した設定。元の設定の所有権を引き継ぎます
 	 */
 	//------------------------------------------------------------------------------
 	pub fn with_failure(mut self, point: FailurePoint) -> Self {
@@ -559,17 +559,17 @@ impl TransactionOptions {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 明示された境界だけを失敗させます。設定がなければ副作用を持ちません。
+	 * 明示された境界だけを失敗させます。設定がなければ副作用を持ちません
 	 *
 	 * # Arguments
 	 *
-	 * - `boundary`: 現在到達した工程の境界。
-	 * - `item`: ストア別の境界なら 0 始まりの位置、群全体なら `None`。
-	 * - `phase`: 注入失敗へ付ける実工程。
+	 * - `boundary`: 現在到達した工程の境界
+	 * - `item`: ストア別の境界なら 0 始まりの位置、群全体なら `None`
+	 * - `phase`: 注入失敗へ付ける実工程
 	 *
 	 * # Errors
 	 *
-	 * 境界と item の組が明示設定に一致した場合だけ `InjectedFailure` を返します。
+	 * 境界と item の組が明示設定に一致した場合だけ `InjectedFailure` を返します
 	 */
 	//------------------------------------------------------------------------------
 	fn check(
@@ -594,31 +594,31 @@ impl TransactionOptions {
  * 全群/Java/元 snapshot を再検査し、全 stage を検証後に順次確定します。
  * 失敗時は変更済みを逆順で戻し、失敗が重なっても元の原因を保持します。
  * progress は同じ worker で呼び出します。確定開始後の cancel は受け付けません。
- * backup/stage/recovery/journal は失敗後も削除せず、実運用の同時更新停止が必要です。
+ * backup/stage/recovery/journal は失敗後も削除せず、実運用の同時更新停止が必要です
  *
  * # Arguments
  *
- * - `environment`: 診断に使った検証済み Java。
- * - `group`: 対象ゼロのストアも含む、入力範囲全体の診断。
- * - `plan`: 同じ群と埋込み定義から再構築できる変更計画。
- * - `passwords`: 対象ゼロを含む `group.stores()` 順の秘密の借用。
- * - `options`: 保存先、必要なら保存時 Java の拘束、隔離試験の失敗境界。
- * - `cancellation`: 確定開始前まで受け付ける中断要求。
- * - `progress`: 呼出し元と同じ worker 上で行う工程通知。
+ * - `environment`: 診断に使った検証済み Java
+ * - `group`: 対象ゼロのストアも含む、入力範囲全体の診断
+ * - `plan`: 同じ群と埋込み定義から再構築できる変更計画
+ * - `passwords`: 対象ゼロを含む `group.stores()` 順の秘密の借用
+ * - `options`: 保存先、必要なら保存時 Java の拘束、隔離試験の失敗境界
+ * - `cancellation`: 確定開始前まで受け付ける中断要求
+ * - `progress`: 呼出し元と同じ worker 上で行う工程通知
  *
  * # Returns
  *
- * 全対象の適用と検証を完了した結果。バックアップへの入口を所有します。
+ * 全対象の適用と検証を完了した結果。バックアップへの入口を所有します
  *
  * # Errors
  *
  * 計画・Java・全実体の変化、排他・権限・保存・stage・置換・検証の失敗。
- * 確定を試みた項目は逆順に rollback し、元の原因・rollback 失敗・残存状態を返します。
+ * 確定を試みた項目は逆順に rollback し、元の原因・rollback 失敗・残存状態を返します
  *
  * # Notes
  *
  * 対象の lock と write guard は本呼出しが所有し、戻るときに解放します。
- * 複数ファイル全体の原子的変更を保証せず、確定途中は利用者の中断を受け付けません。
+ * 複数ファイル全体の原子的変更を保証せず、確定途中は利用者の中断を受け付けません
  */
 //------------------------------------------------------------------------------
 pub fn apply_transaction(
@@ -1048,38 +1048,38 @@ pub fn apply_transaction(
 	Ok(outcome(&manifest, &directory, TransactionState::Applied))
 }
 
-/// 適用の逆順復旧で同じ寿命を持つ借用をまとめます。
+/// 適用の逆順復旧で同じ寿命を持つ借用をまとめます
 struct ApplyRollback<'a, 'password> {
-	/// 同じ Java。
+	/// 同じ Java
 	environment: &'a JavaEnvironment,
-	/// 固定済み計画。
+	/// 固定済み計画
 	manifest: &'a Manifest,
-	/// raw backup の保管場所。
+	/// raw backup の保管場所
 	directory: &'a Path,
-	/// 元の群との対応。
+	/// 元の群との対応
 	plan: &'a ChangePlan,
-	/// 操作時だけ供給する password。
+	/// 操作時だけ供給する password
 	passwords: &'a [&'password StorePassword],
-	/// 失敗注入条件。
+	/// 失敗注入条件
 	options: &'a TransactionOptions,
-	/// 同じ永続 writer。
+	/// 同じ永続 writer
 	journal: Option<&'a mut Journal>,
-	/// 置換を試行した順序。
+	/// 置換を試行した順序
 	attempted: &'a [usize],
 }
 
 //------------------------------------------------------------------------------
 /**
- * 変更済み/置換試行済みの対象だけを逆順で戻します。未知内容は上書きしません。
+ * 変更済み/置換試行済みの対象だけを逆順で戻します。未知内容は上書きしません
  *
  * # Arguments
  *
- * - `context`: 適用済み・試行済みの位置、元 snapshot、journal と設定の借用。
- * - `progress`: 同じ worker 上で行う、中断不可の rollback 工程通知。
+ * - `context`: 適用済み・試行済みの位置、元 snapshot、journal と設定の借用
+ * - `progress`: 同じ worker 上で行う、中断不可の rollback 工程通知
  *
  * # Returns
  *
- * 逆順の復旧で発生した全失敗。空なら試行した項目の復旧と検証に合格しています。
+ * 逆順の復旧で発生した全失敗。空なら試行した項目の復旧と検証に合格しています
  */
 //------------------------------------------------------------------------------
 fn rollback_apply(
@@ -1226,11 +1226,11 @@ fn rollback_apply(
 
 //------------------------------------------------------------------------------
 /**
- * Java の既存の実体/hash/metadata を検査し、UI 向け分類を保持します。
+ * Java の既存の実体/hash/metadata を検査し、UI 向け分類を保持します
  *
  * # Errors
  *
- * 選択済み Java の snapshot を再照合できない場合。元の file 検査理由を保持します。
+ * 選択済み Java の snapshot を再照合できない場合。元の file 検査理由を保持します
  */
 //------------------------------------------------------------------------------
 fn validate_java(environment: &JavaEnvironment) -> Result<(), TransactionError> {
@@ -1244,17 +1244,17 @@ fn validate_java(environment: &JavaEnvironment) -> Result<(), TransactionError> 
 
 //------------------------------------------------------------------------------
 /**
- * 変更済み以外の全群と Java を再検査します。対象ゼロのストアも省略しません。
+ * 変更済み以外の全群と Java を再検査します。対象ゼロのストアも省略しません
  *
  * # Arguments
  *
- * - `environment`: 三ファイルを再照合する選択済み Java。
- * - `group`: 変更対象外を含む元の全診断群。
- * - `changed`: 既に変更したため元 snapshot との比較から除外する、群内の 0 始まりの位置。
+ * - `environment`: 三ファイルを再照合する選択済み Java
+ * - `group`: 変更対象外を含む元の全診断群
+ * - `changed`: 既に変更したため元 snapshot との比較から除外する、群内の 0 始まりの位置
  *
  * # Errors
  *
- * Java または未変更のストアが、元 snapshot と一致しないか再取得できない場合。
+ * Java または未変更のストアが、元 snapshot と一致しないか再取得できない場合
  */
 //------------------------------------------------------------------------------
 fn validate_group(
@@ -1291,20 +1291,20 @@ fn validate_group(
 
 //------------------------------------------------------------------------------
 /**
- * 全 inventory と通常の metadata を実 path から再取得し、期待状態と照合します。
+ * 全 inventory と通常の metadata を実 path から再取得し、期待状態と照合します
  *
  * # Arguments
  *
- * - `environment`: 一覧を取得する Java。
- * - `item`: 元状態と適用後状態の両方を記録した manifest 項目。
- * - `password`: この対象の全 inventory を再取得する秘密。
- * - `cancellation`: 一覧取得中に監視する中断要求。
- * - `original`: `true` は元状態、`false` は適用後状態を期待します。
- * - `identity`: `true` は byte・metadata に加えて file ID も要求します。
+ * - `environment`: 一覧を取得する Java
+ * - `item`: 元状態と適用後状態の両方を記録した manifest 項目
+ * - `password`: この対象の全 inventory を再取得する秘密
+ * - `cancellation`: 一覧取得中に監視する中断要求
+ * - `original`: `true` は元状態、`false` は適用後状態を期待します
+ * - `identity`: `true` は byte・metadata に加えて file ID も要求します
  *
  * # Errors
  *
- * 期待する snapshot または全 inventory と一致しないか、再取得に失敗した場合。
+ * 期待する snapshot または全 inventory と一致しないか、再取得に失敗した場合
  */
 //------------------------------------------------------------------------------
 fn verify_target(
@@ -1340,20 +1340,20 @@ fn verify_target(
 
 //------------------------------------------------------------------------------
 /**
- * 同じ厳密 list を stage/実 path/backup に使用し、全別名・種別・DER hash・形式を照合します。
+ * 同じ厳密 list を stage/実 path/backup に使用し、全別名・種別・DER hash・形式を照合します
  *
  * # Arguments
  *
- * - `environment`: keytool を提供する選択済み Java。
- * - `path`: 今回全 inventory を取り直す実ファイル。
- * - `password`: 指定ファイルの認証だけに借用する秘密。
- * - `cancellation`: 一覧取得で監視する中断要求。
- * - `expected`: 全別名・種別・DER ハッシュ・形式の期待値。
- * - `phase`: 下位エラーへ結び付ける現在工程。
+ * - `environment`: keytool を提供する選択済み Java
+ * - `path`: 今回全 inventory を取り直す実ファイル
+ * - `password`: 指定ファイルの認証だけに借用する秘密
+ * - `cancellation`: 一覧取得で監視する中断要求
+ * - `expected`: 全別名・種別・DER ハッシュ・形式の期待値
+ * - `phase`: 下位エラーへ結び付ける現在工程
  *
  * # Errors
  *
- * ファイル・一覧を取得できない、警告がある、または保存済みの期待一覧と一致しない場合。
+ * ファイル・一覧を取得できない、警告がある、または保存済みの期待一覧と一致しない場合
  */
 //------------------------------------------------------------------------------
 fn verify_inventory(
@@ -1394,15 +1394,15 @@ fn verify_inventory(
 
 //------------------------------------------------------------------------------
 /**
- * 元 backup を読戻し、内容と上限を照合します。backup の ACL は対象へコピーしません。
+ * 元 backup を読戻し、内容と上限を照合します。backup の ACL は対象へコピーしません
  *
  * # Returns
  *
- * 元 snapshot と内容が一致した backup の全 byte 列。
+ * 元 snapshot と内容が一致した backup の全 byte 列
  *
  * # Errors
  *
- * backup の取得失敗、容量超過、長さまたはハッシュの不一致。
+ * backup の取得失敗、容量超過、長さまたはハッシュの不一致
  */
 //------------------------------------------------------------------------------
 fn verify_raw_backup(path: &Path, original: &FileSnapshot) -> Result<Vec<u8>, TransactionError> {
@@ -1419,11 +1419,11 @@ fn verify_raw_backup(path: &Path, original: &FileSnapshot) -> Result<Vec<u8>, Tr
 
 //------------------------------------------------------------------------------
 /**
- * 同 volume recovery copy が本当に元実体であるか、hash/ID/metadata を照合します。
+ * 同 volume recovery copy が本当に元実体であるか、hash/ID/metadata を照合します
  *
  * # Errors
  *
- * 元実体の ID・内容・保持 metadata が期待と一致しないか、退避物を取得できない場合。
+ * 元実体の ID・内容・保持 metadata が期待と一致しないか、退避物を取得できない場合
  */
 //------------------------------------------------------------------------------
 fn verify_recovery_copy(path: &Path, expected: &FileSnapshot) -> Result<(), TransactionError> {
@@ -1447,12 +1447,12 @@ fn verify_recovery_copy(path: &Path, expected: &FileSnapshot) -> Result<(), Tran
 
 //------------------------------------------------------------------------------
 /**
- * 置換で実際に退避された file を照合し、競合した未知内容の場所をエラー証拠へ残します。
+ * 置換で実際に退避された file を照合し、競合した未知内容の場所をエラー証拠へ残します
  *
  * # Errors
  *
  * 退避された実体が期待と異なるか取得できない場合。
- * 失敗した実パスを証拠として保持し、未知内容を上書きしません。
+ * 失敗した実パスを証拠として保持し、未知内容を上書きしません
  */
 //------------------------------------------------------------------------------
 fn verify_displaced_copy(path: &Path, expected: &FileSnapshot) -> Result<(), TransactionError> {
@@ -1472,18 +1472,18 @@ fn verify_displaced_copy(path: &Path, expected: &FileSnapshot) -> Result<(), Tra
 
 //------------------------------------------------------------------------------
 /**
- * 既存の退避物が期待内容と矛盾したら自動上書きを禁止します。未知の証拠は削除しません。
+ * 既存の退避物が期待内容と矛盾したら自動上書きを禁止します。未知の証拠は削除しません
  *
  * # Arguments
  *
- * - `id`: 元の transaction ID。
- * - `index`: manifest 内の 0 始まりの項目位置。
- * - `item`: 照合する元状態・適用後状態・work directory。
- * - `operation`: 復元操作の ID。`None` は適用時の退避物だけを調べます。
+ * - `id`: 元の transaction ID
+ * - `index`: manifest 内の 0 始まりの項目位置
+ * - `item`: 照合する元状態・適用後状態・work directory
+ * - `operation`: 復元操作の ID。`None` は適用時の退避物だけを調べます
  *
  * # Returns
  *
- * 既存の退避物に期待と矛盾するものがあれば `true`。不在だけでは競合にしません。
+ * 既存の退避物に期待と矛盾するものがあれば `true`。不在だけでは競合にしません
  */
 //------------------------------------------------------------------------------
 fn conflicting_artifacts(
@@ -1523,18 +1523,18 @@ fn conflicting_artifacts(
 
 //------------------------------------------------------------------------------
 /**
- * file ID を要求するかを明示し、hash/metadata の一致しない path は拒否します。
+ * file ID を要求するかを明示し、hash/metadata の一致しない path は拒否します
  *
  * # Arguments
  *
- * - `path`: 再取得して照合する実パス。
- * - `expected`: 内容・保持 metadata の期待値。
- * - `identity`: `true` は file ID の一致も要求します。
- * - `phase`: 取得・不一致エラーへ付ける工程。
+ * - `path`: 再取得して照合する実パス
+ * - `expected`: 内容・保持 metadata の期待値
+ * - `identity`: `true` は file ID の一致も要求します
+ * - `phase`: 取得・不一致エラーへ付ける工程
  *
  * # Errors
  *
- * snapshot の取得失敗、または要求した内容・metadata・実体の不一致。
+ * snapshot の取得失敗、または要求した内容・metadata・実体の不一致
  */
 //------------------------------------------------------------------------------
 fn verify_snapshot(
@@ -1557,17 +1557,17 @@ fn verify_snapshot(
 
 //------------------------------------------------------------------------------
 /**
- * 置換した stage 本体と確認してから、元の DACL を保持します。未知実体へ権限を設定しません。
+ * 置換した stage 本体と確認してから、元の DACL を保持します。未知実体へ権限を設定しません
  *
  * # Arguments
  *
- * - `path`: 置換後の実パス。
- * - `prepared`: 実パスへ移ったはずの検証済み stage。
- * - `original`: 戻す DACL と保護状態を持つ元 snapshot。
+ * - `path`: 置換後の実パス
+ * - `prepared`: 実パスへ移ったはずの検証済み stage
+ * - `original`: 戻す DACL と保護状態を持つ元 snapshot
  *
  * # Errors
  *
- * 置換後の実体が stage と一致しない、または元 DACL の設定に失敗した場合。
+ * 置換後の実体が stage と一致しない、または元 DACL の設定に失敗した場合
  */
 //------------------------------------------------------------------------------
 fn finish_replacement(
@@ -1595,20 +1595,20 @@ fn finish_replacement(
 
 //------------------------------------------------------------------------------
 /**
- * 型付き file 検査を容量上限付きで実行します。
+ * 型付き file 検査を容量上限付きで実行します
  *
  * # Arguments
  *
- * - `path`: 全 byte と metadata を取得する実ファイル。
- * - `phase`: file 検査失敗へ付ける現在工程。
+ * - `path`: 全 byte と metadata を取得する実ファイル
+ * - `phase`: file 検査失敗へ付ける現在工程
  *
  * # Returns
  *
- * 最大 `MAX_INPUT_BYTES` の snapshot と全 byte 列。
+ * 最大 `MAX_INPUT_BYTES` の snapshot と全 byte 列
  *
  * # Errors
  *
- * read_snapshot の安全性検査・I/O 失敗を transaction の分類へ保持して返します。
+ * read_snapshot の安全性検査・I/O 失敗を transaction の分類へ保持して返します
  */
 //------------------------------------------------------------------------------
 fn snapshot(
@@ -1620,7 +1620,7 @@ fn snapshot(
 
 //------------------------------------------------------------------------------
 /**
- * 実体と metadata が既知のどちらにも一致しない場合は Unknown とし上書きを許しません。
+ * 実体と metadata が既知のどちらにも一致しない場合は Unknown とし上書きを許しません
  */
 //------------------------------------------------------------------------------
 fn classify(item: &ManifestItem) -> ItemState {
@@ -1648,7 +1648,7 @@ fn classify(item: &ManifestItem) -> ItemState {
 
 //------------------------------------------------------------------------------
 /**
- * 置換失敗でも三つの実体を調べ、欠落/未知を成功扱いしない証拠を所有します。
+ * 置換失敗でも三つの実体を調べ、欠落/未知を成功扱いしない証拠を所有します
  */
 //------------------------------------------------------------------------------
 fn inspect_artifacts(paths: &[&Path]) -> Vec<ArtifactEvidence> {
@@ -1672,19 +1672,19 @@ fn inspect_artifacts(paths: &[&Path]) -> Vec<ArtifactEvidence> {
 
 //------------------------------------------------------------------------------
 /**
- * 注入と永続追記を一箇所で実行します。journal がない場合は確定できません。
+ * 注入と永続追記を一箇所で実行します。journal がない場合は確定できません
  *
  * # Arguments
  *
- * - `journal`: 追記先。`None` では確定記録を作れません。
- * - `options`: journal 追記前に検査する明示失敗境界。
- * - `event`: 永続化する状態遷移。
- * - `item`: 個別項目の記録なら 0 始まりの位置。
+ * - `journal`: 追記先。`None` では確定記録を作れません
+ * - `options`: journal 追記前に検査する明示失敗境界
+ * - `event`: 永続化する状態遷移
+ * - `item`: 個別項目の記録なら 0 始まりの位置
  *
  * # Errors
  *
  * journal 不在、明示境界の失敗、または追記・flush・sync の失敗。
- * 書込み途中に失敗しても、書込み済みの記録は取り消しません。
+ * 書込み途中に失敗しても、書込み済みの記録は取り消しません
  */
 //------------------------------------------------------------------------------
 fn append(
@@ -1703,15 +1703,15 @@ fn append(
 
 //------------------------------------------------------------------------------
 /**
- * 本人用の一意 ID を生成します。時刻異常でも既存 directory は上書きしません。
+ * 本人用の一意 ID を生成します。時刻異常でも既存 directory は上書きしません
  *
  * # Returns
  *
- * 現在時刻・process ID・process 内の連番を含む ID。新規作成の排他は呼出し側でも行います。
+ * 現在時刻・process ID・process 内の連番を含む ID。新規作成の排他は呼出し側でも行います
  *
  * # Errors
  *
- * システム時刻が UNIX_EPOCH より前の場合。
+ * システム時刻が UNIX_EPOCH より前の場合
  */
 //------------------------------------------------------------------------------
 fn new_id() -> Result<String, TransactionError> {
@@ -1728,11 +1728,11 @@ fn new_id() -> Result<String, TransactionError> {
 
 //------------------------------------------------------------------------------
 /**
- * 確定前だけ利用者の cancel を受理します。
+ * 確定前だけ利用者の cancel を受理します
  *
  * # Errors
  *
- * 中断が要求済みなら `Cancelled`。確定中の呼出し経路では使用しません。
+ * 中断が要求済みなら `Cancelled`。確定中の呼出し経路では使用しません
  */
 //------------------------------------------------------------------------------
 fn check_cancel(cancellation: &Cancellation) -> Result<(), TransactionError> {
@@ -1749,15 +1749,15 @@ fn check_cancel(cancellation: &Cancellation) -> Result<(), TransactionError> {
 
 //------------------------------------------------------------------------------
 /**
- * 時間から百分率を捏造せず、実際の工程を callback へ渡します。
+ * 時間から百分率を捏造せず、実際の工程を callback へ渡します
  *
  * # Arguments
  *
- * - `progress`: 同じ呼出し thread で実行する通知先。
- * - `phase`: 実際に到達した工程。
- * - `item`: 個別工程なら 0 始まりの位置、全体工程なら `None`。
- * - `item_count`: 変更計画の全項目数。
- * - `cancellable`: この工程で安全な中断を受け付けられるか。
+ * - `progress`: 同じ呼出し thread で実行する通知先
+ * - `phase`: 実際に到達した工程
+ * - `item`: 個別工程なら 0 始まりの位置、全体工程なら `None`
+ * - `item_count`: 変更計画の全項目数
+ * - `cancellable`: この工程で安全な中断を受け付けられるか
  */
 //------------------------------------------------------------------------------
 fn notify(
@@ -1777,7 +1777,7 @@ fn notify(
 
 //------------------------------------------------------------------------------
 /**
- * native 分類を UI 用 code へ写し、OS code を保持します。
+ * native 分類を UI 用 code へ写し、OS code を保持します
  */
 //------------------------------------------------------------------------------
 fn native_error(phase: TransactionPhase, path: &Path, failure: IoFailure) -> TransactionError {
@@ -1803,7 +1803,7 @@ fn native_error(phase: TransactionPhase, path: &Path, failure: IoFailure) -> Tra
 
 //------------------------------------------------------------------------------
 /**
- * child の分類と path を保持します。秘密や出力本文を複製しません。
+ * child の分類と path を保持します。秘密や出力本文を複製しません
  */
 //------------------------------------------------------------------------------
 fn process_error(phase: TransactionPhase, path: &Path, failure: ProcessError) -> TransactionError {
@@ -1823,7 +1823,7 @@ fn process_error(phase: TransactionPhase, path: &Path, failure: ProcessError) ->
 
 //------------------------------------------------------------------------------
 /**
- * 全件確認後だけ、復元入口と再起動案内を持つ正常結果を生成します。
+ * 全件確認後だけ、復元入口と再起動案内を持つ正常結果を生成します
  */
 //------------------------------------------------------------------------------
 fn outcome(manifest: &Manifest, directory: &Path, state: TransactionState) -> TransactionOutcome {
@@ -1840,21 +1840,21 @@ fn outcome(manifest: &Manifest, directory: &Path, state: TransactionState) -> Tr
 	}
 }
 
-/// 再読込み済み manifest と現在の実体分類を一緒に保持する内部所有者です。
+/// 再読込み済み manifest と現在の実体分類を一緒に保持する内部所有者です
 struct LoadedTransaction {
-	/// 検証済みの private directory。
+	/// 検証済みの private directory
 	directory: PathBuf,
-	/// immutable 計画。
+	/// immutable 計画
 	manifest: Manifest,
-	/// 最新 journal の安全に読めた部分。
+	/// 最新 journal の安全に読めた部分
 	journal: JournalStatus,
-	/// 初回 journal が未作成で、復旧 journal もまだ存在しない状態。
+	/// 初回 journal が未作成で、復旧 journal もまだ存在しない状態
 	journal_missing: bool,
-	/// 追記する最新 journal の path。
+	/// 追記する最新 journal の path
 	journal_path: PathBuf,
-	/// 破断 journal の次に作る分岐番号。
+	/// 破断 journal の次に作る分岐番号
 	next_branch: usize,
-	/// 実 path の現在分類。
+	/// 実 path の現在分類
 	states: Vec<ItemState>,
 }
 
@@ -1862,19 +1862,19 @@ struct LoadedTransaction {
 /**
  * 限定 backup root 内の履歴を列挙します。一つの不正記録でも他の履歴を隠しません。
  * manifest 保存前の directory も IncompletePreparation として残します。
- * password や keytool の実行は不要です。未知の物を削除しません。
+ * password や keytool の実行は不要です。未知の物を削除しません
  *
  * # Arguments
  *
- * - `options`: 読み取る限定 backup root。新規 directory は作成しません。
+ * - `options`: 読み取る限定 backup root。新規 directory は作成しません
  *
  * # Returns
  *
- * ID の降順の履歴。root 不在は空、個々の検査失敗は該当要素へ保持します。
+ * ID の降順の履歴。root 不在は空、個々の検査失敗は該当要素へ保持します
  *
  * # Errors
  *
- * root の実体・限定 ACL の検査、directory 列挙の失敗、または 10,000 件の上限超過。
+ * root の実体・限定 ACL の検査、directory 列挙の失敗、または 10,000 件の上限超過
  */
 //------------------------------------------------------------------------------
 pub fn list_history(options: &TransactionOptions) -> Result<Vec<HistoryEntry>, TransactionError> {
@@ -1928,20 +1928,20 @@ pub fn list_history(options: &TransactionOptions) -> Result<Vec<HistoryEntry>, T
  * 選択した ID の schema/backup/journal と全実体を照合します。
  * 原/適用後/欠落/未知を区別し、末尾破断を Applied/Restored と判定しません。
  * 初回 journal の未作成は Recoverable とし、実在 journal の末尾破断とは区別します。
- * この読み取り結果は復元許可の代わりではなく、復元関数が lock 後に再検査します。
+ * この読み取り結果は復元許可の代わりではなく、復元関数が lock 後に再検査します
  *
  * # Arguments
  *
- * - `options`: 履歴を拘束する限定 root と保存時 Java の設定。
- * - `id`: 一件を指定する、パス区切りを含まない transaction ID。
+ * - `options`: 履歴を拘束する限定 root と保存時 Java の設定
+ * - `id`: 一件を指定する、パス区切りを含まない transaction ID
  *
  * # Returns
  *
- * 現物に基づく履歴状態と、全対象・保管場所。manifest 不在は準備未完了として返します。
+ * 現物に基づく履歴状態と、全対象・保管場所。manifest 不在は準備未完了として返します
  *
  * # Errors
  *
- * ID・root・記録・backup の検査に失敗した場合。読み取りだけを行い、証拠を修復しません。
+ * ID・root・記録・backup の検査に失敗した場合。読み取りだけを行い、証拠を修復しません
  */
 //------------------------------------------------------------------------------
 pub fn inspect_transaction(
@@ -2040,29 +2040,29 @@ pub fn inspect_transaction(
  * 適用履歴を元へ戻します。password は inspect_transaction の stores 順で再供給します。
  * backup 整合性、同じ Java、記録した適用後 hash/metadata の全一致が必要です。
  * 外部変更・不正 manifest・破損 backup は上書きしません。二重復元は AlreadyRestored。
- * 全 stage を検証後に復元を確定し、失敗時の部分状態を隠しません。
+ * 全 stage を検証後に復元を確定し、失敗時の部分状態を隠しません
  *
  * # Arguments
  *
- * - `environment`: 保存時と同じ Java。実体・内容・metadata を再照合します。
- * - `options`: 対象履歴を読み取る限定 root。
- * - `id`: 復元または復旧する transaction ID。
- * - `passwords`: inspect_transaction が返した stores 順の認証入力。
- * - `cancellation`: 確定開始前まで監視する中断要求。
- * - `progress`: 同じ worker 上で実行する工程通知。
+ * - `environment`: 保存時と同じ Java。実体・内容・metadata を再照合します
+ * - `options`: 対象履歴を読み取る限定 root
+ * - `id`: 復元または復旧する transaction ID
+ * - `passwords`: inspect_transaction が返した stores 順の認証入力
+ * - `cancellation`: 確定開始前まで監視する中断要求
+ * - `progress`: 同じ worker 上で実行する工程通知
  *
  * # Returns
  *
- * 全件を元状態へ戻して検証した結果。既に元の完全状態なら `AlreadyRestored`。
+ * 全件を元状態へ戻して検証した結果。既に元の完全状態なら `AlreadyRestored`
  *
  * # Errors
  *
  * 保存時 Java・記録・backup・現在実体の不一致、排他・権限・stage・置換・検証の失敗。
- * 確定後の失敗は直前状態への rollback を試み、主原因と復旧失敗を共に返します。
+ * 確定後の失敗は直前状態への rollback を試み、主原因と復旧失敗を共に返します
  *
  * # Notes
  *
- * 確定開始後は中断不可です。lock と guard を所有し、戻るときに解放します。
+ * 確定開始後は中断不可です。lock と guard を所有し、戻るときに解放します
  */
 //------------------------------------------------------------------------------
 pub fn restore_transaction(
@@ -2089,29 +2089,29 @@ pub fn restore_transaction(
  * 未完了 transaction の既知状態だけを元へ戻します。未知 file は強制上書きしません。
  * 末尾破断 journal は変更せず、新規 recovery journal へ分岐して証跡を残します。
  * 初回 journal の未作成も、元の不在を保つ新規 recovery journal へ記録します。
- * 欠落は永続化済み未検証の item と一致する元 recovery copy がある場合だけ許可します。
+ * 欠落は永続化済み未検証の item と一致する元 recovery copy がある場合だけ許可します
  *
  * # Arguments
  *
- * - `environment`: 保存時と同じ Java。実体・内容・metadata を再照合します。
- * - `options`: 対象履歴を読み取る限定 root。
- * - `id`: 復元または復旧する transaction ID。
- * - `passwords`: inspect_transaction が返した stores 順の認証入力。
- * - `cancellation`: 確定開始前まで監視する中断要求。
- * - `progress`: 同じ worker 上で実行する工程通知。
+ * - `environment`: 保存時と同じ Java。実体・内容・metadata を再照合します
+ * - `options`: 対象履歴を読み取る限定 root
+ * - `id`: 復元または復旧する transaction ID
+ * - `passwords`: inspect_transaction が返した stores 順の認証入力
+ * - `cancellation`: 確定開始前まで監視する中断要求
+ * - `progress`: 同じ worker 上で実行する工程通知
  *
  * # Returns
  *
- * 全件が元状態であることを確認した復旧結果と、保持した履歴への入口。
+ * 全件が元状態であることを確認した復旧結果と、保持した履歴への入口
  *
  * # Errors
  *
  * 未知実体・不正記録・backup 不一致・根拠のない欠落、または準備・確定・検証の失敗。
- * 部分状態と rollback の失敗を隠さず、残存する証拠を保持して返します。
+ * 部分状態と rollback の失敗を隠さず、残存する証拠を保持して返します
  *
  * # Notes
  *
- * 正常な復元と同じ排他・検証を行い、確定開始後は中断を受け付けません。
+ * 正常な復元と同じ排他・検証を行い、確定開始後は中断を受け付けません
  */
 //------------------------------------------------------------------------------
 pub fn recover_transaction(
@@ -2137,22 +2137,22 @@ pub fn recover_transaction(
 /**
  * 限定 root 内の一件を再読込みし、各 backup と現在の path を完全に検証します。
  * 初回 journal だけは未作成を Prepared として保持し、復旧分岐の存在後も同じ規則を使います。
- * 存在する全 journal の内容と復旧分岐の連番を検証し、欠落以外の I/O 失敗は返します。
+ * 存在する全 journal の内容と復旧分岐の連番を検証し、欠落以外の I/O 失敗は返します
  *
  * # Arguments
  *
- * - `options`: 保存先と必要な保存時 Java の拘束。
- * - `id`: 限定 root 内で検査する transaction ID。
+ * - `options`: 保存先と必要な保存時 Java の拘束
+ * - `id`: 限定 root 内で検査する transaction ID
  *
  * # Returns
  *
  * manifest、検証済み journal、現在の全項目状態。
- * 初回 journal の不在は独立したフラグへ保持し、実在する末尾破断と区別します。
+ * 初回 journal の不在は独立したフラグへ保持し、実在する末尾破断と区別します
  *
  * # Errors
  *
  * manifest・backup・全 journal の内容、復旧分岐の連番、または実体検査の失敗。
- * 初回 journal の NotFound 以外の I/O 失敗を未作成として受理しません。
+ * 初回 journal の NotFound 以外の I/O 失敗を未作成として受理しません
  */
 //------------------------------------------------------------------------------
 fn load_transaction(
@@ -2293,11 +2293,11 @@ fn load_transaction(
 
 //------------------------------------------------------------------------------
 /**
- * 変更前に同じ Java を再選択したことと、適用時からの executable/release 不変を要求します。
+ * 変更前に同じ Java を再選択したことと、適用時からの executable/release 不変を要求します
  *
  * # Errors
  *
- * Java root または三ファイルの保存時 snapshot が、現在の選択済み Java と異なる場合。
+ * Java root または三ファイルの保存時 snapshot が、現在の選択済み Java と異なる場合
  */
 //------------------------------------------------------------------------------
 fn verify_saved_java(
@@ -2320,11 +2320,11 @@ fn verify_saved_java(
 
 //------------------------------------------------------------------------------
 /**
- * 欠落先は直前に置換開始が永続化され、元実体の recovery copy が一致する場合だけ許可。
+ * 欠落先は直前に置換開始が永続化され、元実体の recovery copy が一致する場合だけ許可
  *
  * # Returns
  *
- * 該当項目が置換開始済み・検証未了で、元状態の退避物と一致する場合だけ `true`。
+ * 該当項目が置換開始済み・検証未了で、元状態の退避物と一致する場合だけ `true`
  */
 //------------------------------------------------------------------------------
 fn missing_recoverable(loaded: &LoadedTransaction, index: usize) -> bool {
@@ -2356,26 +2356,26 @@ fn missing_recoverable(loaded: &LoadedTransaction, index: usize) -> bool {
 
 //------------------------------------------------------------------------------
 /**
- * 同 volume に全復元 stage を準備し、既知状態以外を一切上書きせず順次確定します。
+ * 同 volume に全復元 stage を準備し、既知状態以外を一切上書きせず順次確定します
  *
  * # Arguments
  *
- * - `environment`: 保存時と同じ Java。実体・内容・metadata を再照合します。
- * - `options`: 対象履歴を読み取る限定 root。
- * - `id`: 復元または復旧する transaction ID。
- * - `passwords`: inspect_transaction が返した stores 順の認証入力。
- * - `cancellation`: 確定開始前まで監視する中断要求。
- * - `progress`: 同じ worker 上で実行する工程通知。
- * - `recovery`: `true` は未完了の既知状態の復旧、`false` は正常な適用履歴の復元。
+ * - `environment`: 保存時と同じ Java。実体・内容・metadata を再照合します
+ * - `options`: 対象履歴を読み取る限定 root
+ * - `id`: 復元または復旧する transaction ID
+ * - `passwords`: inspect_transaction が返した stores 順の認証入力
+ * - `cancellation`: 確定開始前まで監視する中断要求
+ * - `progress`: 同じ worker 上で実行する工程通知
+ * - `recovery`: `true` は未完了の既知状態の復旧、`false` は正常な適用履歴の復元
  *
  * # Returns
  *
- * 全件を検証した復元・復旧結果。
+ * 全件を検証した復元・復旧結果
  *
  * # Errors
  *
  * 履歴と実体の不整合、準備・排他・確定・検証の失敗。
- * 確定を試みた項目は逆順で直前状態へ戻し、元失敗と rollback 失敗を保持します。
+ * 確定を試みた項目は逆順で直前状態へ戻し、元失敗と rollback 失敗を保持します
  */
 //------------------------------------------------------------------------------
 fn restore_or_recover(
@@ -2681,38 +2681,38 @@ fn restore_or_recover(
 	))
 }
 
-/// 復元の逆順 rollback にだけ必要な一組の借用です。
+/// 復元の逆順 rollback にだけ必要な一組の借用です
 struct RestoreRollback<'a, 'password> {
-	/// 同じ Java。
+	/// 同じ Java
 	environment: &'a JavaEnvironment,
-	/// 読込み/検証済み transaction。
+	/// 読込み/検証済み transaction
 	loaded: &'a LoadedTransaction,
-	/// 操作時だけの password。
+	/// 操作時だけの password
 	passwords: &'a [&'password StorePassword],
-	/// 失敗注入条件。
+	/// 失敗注入条件
 	options: &'a TransactionOptions,
-	/// 同じ永続 writer。
+	/// 同じ永続 writer
 	journal: &'a mut Journal,
-	/// 復元を試行した位置と回収 file。
+	/// 復元を試行した位置と回収 file
 	restored: &'a [(usize, PathBuf)],
-	/// 復元直前の実体。
+	/// 復元直前の実体
 	previous: &'a [Option<FileSnapshot>],
-	/// 既存を上書きしない作業 ID。
+	/// 既存を上書きしない作業 ID
 	operation: &'a str,
 }
 
 //------------------------------------------------------------------------------
 /**
- * 復元失敗でも変更済みを逆順で直前状態へ戻し、元失敗と各 rollback 失敗を別々に保持します。
+ * 復元失敗でも変更済みを逆順で直前状態へ戻し、元失敗と各 rollback 失敗を別々に保持します
  *
  * # Arguments
  *
- * - `context`: 復元前の snapshot、試行位置、journal と設定の借用。
- * - `progress`: 同じ worker 上で行う、中断不可の復旧通知。
+ * - `context`: 復元前の snapshot、試行位置、journal と設定の借用
+ * - `progress`: 同じ worker 上で行う、中断不可の復旧通知
  *
  * # Returns
  *
- * 直前状態への逆順 rollback で発生した全失敗。
+ * 直前状態への逆順 rollback で発生した全失敗
  */
 //------------------------------------------------------------------------------
 fn rollback_restore(
@@ -2844,15 +2844,15 @@ fn rollback_restore(
 
 //------------------------------------------------------------------------------
 /**
- * 履歴を読む既存 root の本人/管理者限定 ACL と canonical path を検査します。
+ * 履歴を読む既存 root の本人/管理者限定 ACL と canonical path を検査します
  *
  * # Returns
  *
- * 限定 ACL と実体を確認した既存 backup root の canonical path。
+ * 限定 ACL と実体を確認した既存 backup root の canonical path
  *
  * # Errors
  *
- * root 不在、パス・ACL・directory の検査、または canonicalize の失敗。
+ * root 不在、パス・ACL・directory の検査、または canonicalize の失敗
  */
 //------------------------------------------------------------------------------
 fn existing_root(options: &TransactionOptions) -> Result<PathBuf, TransactionError> {

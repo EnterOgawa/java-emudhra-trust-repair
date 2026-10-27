@@ -1,7 +1,7 @@
 //------------------------------------------------------------------------------
 /*!
  * - ファイル: internal_qa.rs
- * - 概要: 明示 QA build の自アプリだけを永続化境界で停止し、実 kill の証拠を残します。
+ * - 概要: 明示 QA build の自アプリだけを永続化境界で停止し、実 kill の証拠を残します
  * - バージョン: 01.00.00
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
@@ -11,7 +11,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  * 本ファイルには Apache License, Version 2.0 が適用されます。
- * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください
  * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
@@ -20,12 +20,12 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
  * ```
  *
  * 備考:
  *
- * 通常 build には含めません。他 process の終了や file の置換はしません。
+ * 通常 build には含めません。他 process の終了や file の置換はしません
  */
 //------------------------------------------------------------------------------
 
@@ -42,12 +42,12 @@ static OCCURRENCE: AtomicUsize = AtomicUsize::new(0);
 /**
  * 明示 feature と子専用環境の境界名が一致した場合だけ、専用領域へ marker を sync して待ちます。
  * `label` と `item` は固定の工程と位置です。内容・password・外部出力は記録しません。
- * marker と同名の拡張子 release を親が新規作成すれば再開します。親は所有する子だけを kill します。
+ * marker と同名の拡張子 release を親が新規作成すれば再開します。親は所有する子だけを kill します
  *
  * # Panics
  *
  * 明示 QA 設定が不正、marker が既存、I/O 失敗、120 秒以内に再開されない場合に QA を失敗させます。
- * marker はこの workspace の artifacts/internal-qa 配下だけに作り、既存 file は上書きしません。
+ * marker はこの workspace の artifacts/internal-qa 配下だけに作り、既存 file は上書きしません
  */
 //------------------------------------------------------------------------------
 pub fn qa_checkpoint(label: &str, item: Option<usize>) {

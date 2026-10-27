@@ -1,7 +1,7 @@
 //------------------------------------------------------------------------------
 /*!
  * - ファイル: java.rs
- * - 概要: 選択 Java の release・PE 実体・実行 metadata を照合します。
+ * - 概要: 選択 Java の release・PE 実体・実行 metadata を照合します
  * - バージョン: 01.00.00
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
@@ -11,7 +11,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  * 本ファイルには Apache License, Version 2.0 が適用されます。
- * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください
  * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
@@ -20,12 +20,12 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
  * ```
  *
  * 備考:
  *
- * vendor の表示は署名や発行者の証明ではありません。Java の全 DLL は hash 対象外です。
+ * vendor の表示は署名や発行者の証明ではありません。Java の全 DLL は hash 対象外です
  */
 //------------------------------------------------------------------------------
 
@@ -39,41 +39,41 @@ use trust_repair_core::{IssueCode, SUPPORTED_JAVA_MAJORS};
 use crate::process::{Cancellation, ProcessError, run_readonly};
 use crate::snapshot::{FileSafetyError, FileSnapshot, check_path, read_snapshot};
 
-/// Java 選択を完了できない理由です。GUI は variant を翻訳できます。
+/// Java 選択を完了できない理由です。GUI は variant を翻訳できます
 #[derive(Debug)]
 pub enum JavaError {
-	/// 製品対象の Windows x64 MSVC ビルドではありません。
+	/// 製品対象の Windows x64 MSVC ビルドではありません
 	UnsupportedTarget,
-	/// release または executable のファイル検査に失敗しました。
+	/// release または executable のファイル検査に失敗しました
 	File(
-		/// 元のファイル安全性検査の失敗。
+		/// 元のファイル安全性検査の失敗
 		FileSafetyError,
 	),
-	/// release の必須項目/形式/重複が不正です。
+	/// release の必須項目/形式/重複が不正です
 	InvalidRelease,
-	/// Windows x64 PE executable ではありません。
+	/// Windows x64 PE executable ではありません
 	InvalidExecutable,
-	/// 選択した java.exe の起動に失敗しました。
+	/// 選択した java.exe の起動に失敗しました
 	Process(
-		/// 元の子プロセス実行の失敗。
+		/// 元の子プロセス実行の失敗
 		ProcessError,
 	),
-	/// release と Java 実行結果、または java.home の実体が一致しません。
+	/// release と Java 実行結果、または java.home の実体が一致しません
 	MetadataMismatch,
 }
 
 impl std::fmt::Display for JavaError {
 	//------------------------------------------------------------------------------
 	/**
-	 * 診断用の失敗分類を表示します。自由文から状態判定する必要はありません。
+	 * 診断用の失敗分類を表示します。自由文から状態判定する必要はありません
 	 *
 	 * # Returns
 	 *
-	 * 出力先の書込みに成功すれば `Ok(())`。
+	 * 出力先の書込みに成功すれば `Ok(())`
 	 *
 	 * # Errors
 	 *
-	 * 出力先の `fmt::Error` を伝播します。途中までの出力は取り消しません。
+	 * 出力先の `fmt::Error` を伝播します。途中までの出力は取り消しません
 	 */
 	//------------------------------------------------------------------------------
 	fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -83,38 +83,38 @@ impl std::fmt::Display for JavaError {
 
 impl std::error::Error for JavaError {}
 
-/// 検査した Windows x64 Java です。非対応 major も明示的な抑止理由を保持します。
+/// 検査した Windows x64 Java です。非対応 major も明示的な抑止理由を保持します
 #[derive(Debug)]
 pub struct JavaEnvironment {
-	/// 選択 root の正規 path。
+	/// 選択 root の正規 path
 	root: PathBuf,
-	/// release と実行結果で照合した版文字列。
+	/// release と実行結果で照合した版文字列
 	version: String,
-	/// 明示リストと比較する major。
+	/// 明示リストと比較する major
 	major: u16,
-	/// release と実行結果で照合した vendor。
+	/// release と実行結果で照合した vendor
 	vendor: String,
-	/// JDK または JRE の表示用の区別。
+	/// JDK または JRE の表示用の区別
 	image_kind: JavaImageKind,
-	/// release、java.exe、keytool.exe の順の snapshot。
+	/// release、java.exe、keytool.exe の順の snapshot
 	snapshots: [FileSnapshot; 3],
-	/// 非対応版を自動変更しないための理由。
+	/// 非対応版を自動変更しないための理由
 	issues: Vec<IssueCode>,
 }
 
-/// 選択環境の JDK/JRE の区別です。
+/// 選択環境の JDK/JRE の区別です
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JavaImageKind {
-	/// javac または release により判定した開発キット。
+	/// javac または release により判定した開発キット
 	Jdk,
-	/// runtime image。
+	/// runtime image
 	Jre,
 }
 
 impl JavaEnvironment {
 	//------------------------------------------------------------------------------
 	/**
-	 * 検証済み root の path を返します。
+	 * 検証済み root の path を返します
 	 */
 	//------------------------------------------------------------------------------
 	pub fn root(&self) -> &Path {
@@ -123,7 +123,7 @@ impl JavaEnvironment {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 実測した Java の完全な版文字列を返します。版だけで安全とは判定しません。
+	 * 実測した Java の完全な版文字列を返します。版だけで安全とは判定しません
 	 */
 	//------------------------------------------------------------------------------
 	pub fn version(&self) -> &str {
@@ -132,7 +132,7 @@ impl JavaEnvironment {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 対応リストと照合した major を返します。
+	 * 対応リストと照合した major を返します
 	 */
 	//------------------------------------------------------------------------------
 	pub fn major(&self) -> u16 {
@@ -141,7 +141,7 @@ impl JavaEnvironment {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 選択環境が名乗る vendor を返します。署名検証の代わりにはなりません。
+	 * 選択環境が名乗る vendor を返します。署名検証の代わりにはなりません
 	 */
 	//------------------------------------------------------------------------------
 	pub fn vendor(&self) -> &str {
@@ -150,7 +150,7 @@ impl JavaEnvironment {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 選択環境の JDK/JRE の区別を返します。
+	 * 選択環境の JDK/JRE の区別を返します
 	 */
 	//------------------------------------------------------------------------------
 	pub fn image_kind(&self) -> JavaImageKind {
@@ -159,7 +159,7 @@ impl JavaEnvironment {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 選択した Java 自体による変更抑止理由を返します。
+	 * 選択した Java 自体による変更抑止理由を返します
 	 */
 	//------------------------------------------------------------------------------
 	pub fn issues(&self) -> &[IssueCode] {
@@ -168,7 +168,7 @@ impl JavaEnvironment {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 検査した keytool.exe の正規実体 path を返します。
+	 * 検査した keytool.exe の正規実体 path を返します
 	 */
 	//------------------------------------------------------------------------------
 	pub fn keytool(&self) -> &Path {
@@ -177,7 +177,7 @@ impl JavaEnvironment {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * release/java/keytool の再照合材料を返します。
+	 * release/java/keytool の再照合材料を返します
 	 */
 	//------------------------------------------------------------------------------
 	pub fn snapshots(&self) -> &[FileSnapshot; 3] {
@@ -187,7 +187,7 @@ impl JavaEnvironment {
 	//------------------------------------------------------------------------------
 	/**
 	 * cacerts を必ず含め、存在する jssecacerts を追加します。
-	 * 明示 custom は scan の入力へ別途追加します。不在の cacerts は診断失敗にします。
+	 * 明示 custom は scan の入力へ別途追加します。不在の cacerts は診断失敗にします
 	 */
 	//------------------------------------------------------------------------------
 	pub fn candidate_stores(&self) -> Vec<PathBuf> {
@@ -204,12 +204,12 @@ impl JavaEnvironment {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 入力時からの Java 実体の変化を確認します。失敗時は再選択が必要です。
+	 * 入力時からの Java 実体の変化を確認します。失敗時は再選択が必要です
 	 *
 	 * # Errors
 	 *
 	 * release、java.exe、keytool.exe の内容・実体・metadata が変化したか、
-	 * 再取得できない場合に失敗します。元ファイルは変更しません。
+	 * 再取得できない場合に失敗します。元ファイルは変更しません
 	 */
 	//------------------------------------------------------------------------------
 	pub fn revalidate(&self) -> Result<(), JavaError> {
@@ -226,22 +226,22 @@ impl JavaEnvironment {
 //------------------------------------------------------------------------------
 /**
  * Java root の release、AMD64 PE、実行中 metadata を照合し、選択を完了します。
- * java.exe は選択環境だけを直接起動します。環境や信頼ストアを書き換えません。
+ * java.exe は選択環境だけを直接起動します。環境や信頼ストアを書き換えません
  *
  * # Arguments
  *
- * - `root`: 利用者が選択した Java の絶対パス。参照を結果へ保持しません。
- * - `cancellation`: Java 子プロセスの開始前と収集中に検査する中断要求。
+ * - `root`: 利用者が選択した Java の絶対パス。参照を結果へ保持しません
+ * - `cancellation`: Java 子プロセスの開始前と収集中に検査する中断要求
  *
  * # Returns
  *
  * release と実行中の情報、および三ファイルの snapshot を持つ選択結果。
- * 対応外の Java も、読み取り可能なら抑止理由を付けて返します。
+ * 対応外の Java も、読み取り可能なら抑止理由を付けて返します
  *
  * # Errors
  *
  * 実体/metadata/UTF-8/実行の検証失敗では [`JavaError`]。Java 8/非 LTS/将来版は
- * 実体を読める場合に `UnsupportedJava` を保持した結果を返し、変更を無効にします。
+ * 実体を読める場合に `UnsupportedJava` を保持した結果を返し、変更を無効にします
  */
 //------------------------------------------------------------------------------
 pub fn select_java(root: &Path, cancellation: &Cancellation) -> Result<JavaEnvironment, JavaError> {
@@ -372,19 +372,19 @@ pub fn select_java(root: &Path, cancellation: &Cancellation) -> Result<JavaEnvir
 
 //------------------------------------------------------------------------------
 /**
- * release の key="value" を解釈します。shell 展開はせず、未知キーも重複を検査します。
+ * release の key="value" を解釈します。shell 展開はせず、未知キーも重複を検査します
  *
  * # Arguments
  *
- * - `input`: 選択した Java の release ファイル全体。
+ * - `input`: 選択した Java の release ファイル全体
  *
  * # Returns
  *
- * 重複のないキーと、引用符を除いた値の対応表。
+ * 重複のないキーと、引用符を除いた値の対応表
  *
  * # Errors
  *
- * UTF-8、行構造、キー、引用符、制御文字または重複キーの不正で失敗します。
+ * UTF-8、行構造、キー、引用符、制御文字または重複キーの不正で失敗します
  */
 //------------------------------------------------------------------------------
 fn parse_release(input: &[u8]) -> Result<BTreeMap<String, String>, JavaError> {
@@ -418,11 +418,11 @@ fn parse_release(input: &[u8]) -> Result<BTreeMap<String, String>, JavaError> {
 
 //------------------------------------------------------------------------------
 /**
- * 旧来 1.x 表記も major に変換します。識別は対応リストとの完全比較で行います。
+ * 旧来 1.x 表記も major に変換します。識別は対応リストとの完全比較で行います
  *
  * # Returns
  *
- * 先頭の版番号。旧式の `1.x` は `x` を返し、数値を取得できなければ `None`。
+ * 先頭の版番号。旧式の `1.x` は `x` を返し、数値を取得できなければ `None`
  */
 //------------------------------------------------------------------------------
 fn java_major(version: &str) -> Option<u16> {
@@ -432,11 +432,11 @@ fn java_major(version: &str) -> Option<u16> {
 
 //------------------------------------------------------------------------------
 /**
- * 試験済み明示 major 以外は、将来 LTS も含め変更を抑止します。
+ * 試験済み明示 major 以外は、将来 LTS も含め変更を抑止します
  *
  * # Returns
  *
- * 明示対応する 11・17・21・25 なら空、その他は `UnsupportedJava` を一件返します。
+ * 明示対応する 11・17・21・25 なら空、その他は `UnsupportedJava` を一件返します
  */
 //------------------------------------------------------------------------------
 fn support_issues(major: u16) -> Vec<IssueCode> {
@@ -450,11 +450,11 @@ fn support_issues(major: u16) -> Vec<IssueCode> {
 
 //------------------------------------------------------------------------------
 /**
- * DOS/PE 署名と AMD64/PE32+ を境界検査付きで検証します。コード署名検証ではありません。
+ * DOS/PE 署名と AMD64/PE32+ を境界検査付きで検証します。コード署名検証ではありません
  *
  * # Returns
  *
- * 必要なヘッダが範囲内にあり、PE の machine と optional header が AMD64/PE32+ なら `true`。
+ * 必要なヘッダが範囲内にあり、PE の machine と optional header が AMD64/PE32+ なら `true`
  */
 //------------------------------------------------------------------------------
 fn is_amd64_pe(bytes: &[u8]) -> bool {
@@ -480,7 +480,7 @@ fn is_amd64_pe(bytes: &[u8]) -> bool {
 	header[..4] == *b"PE\0\0" && header[4..6] == [0x64, 0x86] && header[24..26] == [0x0b, 0x02]
 }
 
-/// 対応版・release・実行形式の曖昧さを拒否する契約を確認します。
+/// 対応版・release・実行形式の曖昧さを拒否する契約を確認します
 #[cfg(test)]
 mod tests {
 	use super::{is_amd64_pe, java_major, parse_release, support_issues};
@@ -488,7 +488,7 @@ mod tests {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * Java 8/非 LTS/将来 LTS を版が新しいというだけで対応済みにしないことを確認します。
+	 * Java 8/非 LTS/将来 LTS を版が新しいというだけで対応済みにしないことを確認します
 	 */
 	//------------------------------------------------------------------------------
 	#[test]
@@ -517,7 +517,7 @@ mod tests {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * release の重複・未引用・制御文字・不正 UTF8 と PE 境界の不足を拒否します。
+	 * release の重複・未引用・制御文字・不正 UTF8 と PE 境界の不足を拒否します
 	 */
 	//------------------------------------------------------------------------------
 	#[test]

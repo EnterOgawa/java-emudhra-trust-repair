@@ -1,7 +1,7 @@
 //------------------------------------------------------------------------------
 /*!
  * - ファイル: lib.rs
- * - 概要: 副作用を持たない信頼ストア対策の定義と公開入口を提供します。
+ * - 概要: 副作用を持たない信頼ストア対策の定義と公開入口を提供します
  * - バージョン: 01.00.00
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
@@ -11,7 +11,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  * 本ファイルには Apache License, Version 2.0 が適用されます。
- * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください
  * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
@@ -20,13 +20,13 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
  * ```
  *
  * 備考:
  *
  * ファイル、外部プロセス、通信、Windows API は扱いません。
- * transaction の副作用は Windows crate の後続工程が担当します。
+ * transaction の副作用は Windows crate の後続工程が担当します
  */
 //------------------------------------------------------------------------------
 
@@ -46,9 +46,9 @@ pub use inventory::{
 
 pub use policy::{Policy, PolicyError, RootCertificate, RootRelation, embedded_policy};
 
-/// 製品で対応を計画する Java LTS major の明示リストです。
+/// 製品で対応を計画する Java LTS major の明示リストです
 ///
-/// この定数だけでは、選択 Java の検査や各版の適用・復元試験の合格を表しません。
+/// この定数だけでは、選択 Java の検査や各版の適用・復元試験の合格を表しません
 pub const SUPPORTED_JAVA_MAJORS: [u16; 4] = [11, 17, 21, 25];
 
 #[cfg(test)]

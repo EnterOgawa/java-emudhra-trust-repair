@@ -1,7 +1,7 @@
 //------------------------------------------------------------------------------
 /*!
  * - ファイル: transaction_io.rs
- * - 概要: transaction の Windows 排他、限定 ACL、metadata 検査と置換を包みます。
+ * - 概要: transaction の Windows 排他、限定 ACL、metadata 検査と置換を包みます
  * - バージョン: 01.00.00
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
@@ -11,7 +11,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  * 本ファイルには Apache License, Version 2.0 が適用されます。
- * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください
  * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
@@ -20,13 +20,13 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
  * ```
  *
  * 備考:
  *
  * SACL を読めない場合も変更を拒否します。権限・readonly を変更して通しません。
- * SeSecurityPrivilege は SACL 読取り時の thread token だけで有効化し、直後に解除します。
+ * SeSecurityPrivilege は SACL 読取り時の thread token だけで有効化し、直後に解除します
  */
 //------------------------------------------------------------------------------
 
@@ -67,21 +67,21 @@ use windows_sys::Win32::System::Threading::{
 
 use crate::snapshot::{FileSafetyError, FileSnapshot, check_path};
 
-/// Windows 境界から返す、固定分類と OS code です。
+/// Windows 境界から返す、固定分類と OS code です
 #[derive(Debug)]
 pub(crate) struct IoFailure {
-	/// SACL/追加 metadata の保持条件に合格しない場合は true。
+	/// SACL/追加 metadata の保持条件に合格しない場合は true
 	pub unsupported_metadata: bool,
-	/// 排他が既に存在する場合は true。
+	/// 排他が既に存在する場合は true
 	pub busy: bool,
-	/// 直後に保存した Windows code。構造検査時は None。
+	/// 直後に保存した Windows code。構造検査時は None
 	pub os_code: Option<i32>,
 }
 
 impl From<io::Error> for IoFailure {
 	//------------------------------------------------------------------------------
 	/**
-	 * OS 本文を保持せず code を所有します。ファイルや権限は変更しません。
+	 * OS 本文を保持せず code を所有します。ファイルや権限は変更しません
 	 */
 	//------------------------------------------------------------------------------
 	fn from(error: io::Error) -> Self {
@@ -93,16 +93,16 @@ impl From<io::Error> for IoFailure {
 	}
 }
 
-/// OS の LocalAlloc の所有領域です。生成時だけ pointer を受け取ります。
+/// OS の LocalAlloc の所有領域です。生成時だけ pointer を受け取ります
 struct LocalDescriptor(
-	/// LocalFree で一度だけ解放する、OS allocator の descriptor。
+	/// LocalFree で一度だけ解放する、OS allocator の descriptor
 	*mut std::ffi::c_void,
 );
 
 impl Drop for LocalDescriptor {
 	//------------------------------------------------------------------------------
 	/**
-	 * OS の専用 allocator で一度だけ解放します。
+	 * OS の専用 allocator で一度だけ解放します
 	 */
 	//------------------------------------------------------------------------------
 	fn drop(&mut self) {
@@ -113,26 +113,26 @@ impl Drop for LocalDescriptor {
 	}
 }
 
-/// OS が検査した self-relative descriptor の比較要素です。
+/// OS が検査した self-relative descriptor の比較要素です
 #[derive(Debug, PartialEq, Eq)]
 struct SecurityParts<'a> {
-	/// owner SID の byte 列。
+	/// owner SID の byte 列
 	owner: &'a [u8],
-	/// group SID の byte 列。
+	/// group SID の byte 列
 	group: &'a [u8],
-	/// NULL DACL を区別する ACL の byte 列。
+	/// NULL DACL を区別する ACL の byte 列
 	dacl: Option<&'a [u8]>,
-	/// 親からの継承抑止。
+	/// 親からの継承抑止
 	protected: bool,
 }
 
 //------------------------------------------------------------------------------
 /**
- * 不正な相対 offset を FFI に渡さず検査します。SACL を含む descriptor は拒否します。
+ * 不正な相対 offset を FFI に渡さず検査します。SACL を含む descriptor は拒否します
  *
  * # Returns
  *
- * owner・group・DACL の範囲と保護状態。境界・形式の不整合や SACL があれば `None`。
+ * owner・group・DACL の範囲と保護状態。境界・形式の不整合や SACL があれば `None`
  */
 //------------------------------------------------------------------------------
 fn parts(bytes: &[u8]) -> Option<SecurityParts<'_>> {
@@ -207,7 +207,7 @@ fn parts(bytes: &[u8]) -> Option<SecurityParts<'_>> {
 
 //------------------------------------------------------------------------------
 /**
- * schema 内の descriptor を境界検査します。未知の SACL を空として解釈しません。
+ * schema 内の descriptor を境界検査します。未知の SACL を空として解釈しません
  */
 //------------------------------------------------------------------------------
 pub(crate) fn valid_security(bytes: &[u8]) -> bool {
@@ -216,7 +216,7 @@ pub(crate) fn valid_security(bytes: &[u8]) -> bool {
 
 //------------------------------------------------------------------------------
 /**
- * padding/相対配置の差を除き、owner/group/DACL と継承抑止が一致する場合だけ true。
+ * padding/相対配置の差を除き、owner/group/DACL と継承抑止が一致する場合だけ true
  */
 //------------------------------------------------------------------------------
 pub(crate) fn same_security(left: &[u8], right: &[u8]) -> bool {
@@ -225,7 +225,7 @@ pub(crate) fn same_security(left: &[u8], right: &[u8]) -> bool {
 
 //------------------------------------------------------------------------------
 /**
- * Win32 へ渡す終端 NUL path を損失変換せず作ります。上位で NUL/ADS/祖先を検査します。
+ * Win32 へ渡す終端 NUL path を損失変換せず作ります。上位で NUL/ADS/祖先を検査します
  */
 //------------------------------------------------------------------------------
 fn wide(path: &Path) -> Vec<u16> {
@@ -234,7 +234,7 @@ fn wide(path: &Path) -> Vec<u16> {
 
 //------------------------------------------------------------------------------
 /**
- * 最後の Windows code を他の API より先に保存します。
+ * 最後の Windows code を他の API より先に保存します
  */
 //------------------------------------------------------------------------------
 fn last() -> IoFailure {
@@ -243,7 +243,7 @@ fn last() -> IoFailure {
 
 //------------------------------------------------------------------------------
 /**
- * 追加 metadata を安全に扱えない分類を返します。権限を補正しません。
+ * 追加 metadata を安全に扱えない分類を返します。権限を補正しません
  */
 //------------------------------------------------------------------------------
 fn unsupported() -> IoFailure {
@@ -256,7 +256,7 @@ fn unsupported() -> IoFailure {
 
 //------------------------------------------------------------------------------
 /**
- * path検査の実OS失敗を保持し、リンク等の仕様非対応と権限不足を区別します。
+ * path検査の実OS失敗を保持し、リンク等の仕様非対応と権限不足を区別します
  */
 //------------------------------------------------------------------------------
 fn file_failure(error: FileSafetyError) -> IoFailure {
@@ -272,20 +272,20 @@ fn file_failure(error: FileSafetyError) -> IoFailure {
 
 //------------------------------------------------------------------------------
 /**
- * query に必要な整列済み領域を確保し、OS が返した descriptor だけを複製します。
+ * query に必要な整列済み領域を確保し、OS が返した descriptor だけを複製します
  *
  * # Arguments
  *
- * - `file`: query 可能な handle を持つ、呼出し中所有される file。
- * - `flags`: 問い合わせる security 情報の Windows API フラグ。
+ * - `file`: query 可能な handle を持つ、呼出し中所有される file
+ * - `flags`: 問い合わせる security 情報の Windows API フラグ
  *
  * # Returns
  *
- * OS が返した descriptor を所有する byte 列。
+ * OS が返した descriptor を所有する byte 列
  *
  * # Errors
  *
- * 必要長が 20 byte 未満・1 MiB 超過、または OS の問い合わせ失敗。
+ * 必要長が 20 byte 未満・1 MiB 超過、または OS の問い合わせ失敗
  */
 //------------------------------------------------------------------------------
 fn descriptor(file: &File, flags: u32) -> Result<Vec<u8>, IoFailure> {
@@ -327,15 +327,15 @@ fn descriptor(file: &File, flags: u32) -> Result<Vec<u8>, IoFailure> {
 
 //------------------------------------------------------------------------------
 /**
- * 現 process の SID を SDDL 用文字列として取得します。秘密や環境を読みません。
+ * 現 process の SID を SDDL 用文字列として取得します。秘密や環境を読みません
  *
  * # Returns
  *
- * SDDL へ埋め込める現 process 利用者の SID。token と OS 割当て文字列は本関数で解放します。
+ * SDDL へ埋め込める現 process 利用者の SID。token と OS 割当て文字列は本関数で解放します
  *
  * # Errors
  *
- * token・必要長・情報・SID 文字列の取得、または UTF-16 の復号に失敗した場合。
+ * token・必要長・情報・SID 文字列の取得、または UTF-16 の復号に失敗した場合
  */
 //------------------------------------------------------------------------------
 fn current_sid() -> Result<String, IoFailure> {
@@ -397,15 +397,15 @@ fn current_sid() -> Result<String, IoFailure> {
 
 //------------------------------------------------------------------------------
 /**
- * 本人と Administrators だけを許可する、継承を止めた新規 object の ACL を作ります。
+ * 本人と Administrators だけを許可する、継承を止めた新規 object の ACL を作ります
  *
  * # Returns
  *
- * LocalFree で解放する owner/group/DACL の所有値。
+ * LocalFree で解放する owner/group/DACL の所有値
  *
  * # Errors
  *
- * 現利用者 SID の取得、または SDDL 変換の失敗。
+ * 現利用者 SID の取得、または SDDL 変換の失敗
  */
 //------------------------------------------------------------------------------
 fn restricted_descriptor() -> Result<LocalDescriptor, IoFailure> {
@@ -432,12 +432,12 @@ fn restricted_descriptor() -> Result<LocalDescriptor, IoFailure> {
 
 //------------------------------------------------------------------------------
 /**
- * 既存 directory の owner と限定 DACL を照合します。既存の権限は変更しません。
+ * 既存 directory の owner と限定 DACL を照合します。既存の権限は変更しません
  *
  * # Errors
  *
  * パス・directory・owner・限定 DACL・継承保護を確認できない場合。
- * 既存の権限を広げて再試行しません。
+ * 既存の権限を広げて再試行しません
  */
 //------------------------------------------------------------------------------
 pub(crate) fn verify_private_directory(path: &Path) -> Result<(), IoFailure> {
@@ -474,12 +474,12 @@ pub(crate) fn verify_private_directory(path: &Path) -> Result<(), IoFailure> {
 
 //------------------------------------------------------------------------------
 /**
- * 新規 directory を限定 ACL で一度だけ作ります。既存 object を上書きしません。
+ * 新規 directory を限定 ACL で一度だけ作ります。既存 object を上書きしません
  *
  * # Errors
  *
  * 親・descriptor の検査、directory 作成、作成後の限定 ACL の照合に失敗した場合。
- * 作成後の検査が失敗しても、作成物を自動削除しません。
+ * 作成後の検査が失敗しても、作成物を自動削除しません
  */
 //------------------------------------------------------------------------------
 pub(crate) fn create_private_directory(path: &Path) -> Result<(), IoFailure> {
@@ -501,19 +501,19 @@ pub(crate) fn create_private_directory(path: &Path) -> Result<(), IoFailure> {
 
 //------------------------------------------------------------------------------
 /**
- * 同一 path の別 instance を、全 session 共通の生存期間 lock で抑止します。
+ * 同一 path の別 instance を、全 session 共通の生存期間 lock で抑止します
  *
  * # Arguments
  *
- * - `path`: 同じ正規実体について大文字小文字を揃えてハッシュ化するパス。
+ * - `path`: 同じ正規実体について大文字小文字を揃えてハッシュ化するパス
  *
  * # Returns
  *
- * 生存期間で排他を保持する named mutex の所有 handle。drop で閉じます。
+ * 生存期間で排他を保持する named mutex の所有 handle。drop で閉じます
  *
  * # Errors
  *
- * パスの文字列表現・descriptor・mutex 作成の失敗、または既存 mutex があれば busy。
+ * パスの文字列表現・descriptor・mutex 作成の失敗、または既存 mutex があれば busy
  */
 //------------------------------------------------------------------------------
 pub(crate) fn target_lock(path: &Path) -> Result<OwnedHandle, IoFailure> {
@@ -554,15 +554,15 @@ pub(crate) fn target_lock(path: &Path) -> Result<OwnedHandle, IoFailure> {
 
 //------------------------------------------------------------------------------
 /**
- * 書込みと置換の権限を要求し、内容は変えずに通常 write を抑止します。
+ * 書込みと置換の権限を要求し、内容は変えずに通常 write を抑止します
  *
  * # Returns
  *
- * 通常 write を共有しない所有 file。呼出し側が確定直前まで保持し、drop で閉じます。
+ * 通常 write を共有しない所有 file。呼出し側が確定直前まで保持し、drop で閉じます
  *
  * # Errors
  *
- * write/delete/WRITE_DAC の権限確認、または保持用 handle の取得失敗。
+ * write/delete/WRITE_DAC の権限確認、または保持用 handle の取得失敗
  */
 //------------------------------------------------------------------------------
 pub(crate) fn write_guard(path: &Path) -> Result<File, IoFailure> {
@@ -581,26 +581,26 @@ pub(crate) fn write_guard(path: &Path) -> Result<File, IoFailure> {
 		.open(path)?)
 }
 
-/// SACL 読取りだけのために生成した thread impersonation の所有者です。
+/// SACL 読取りだけのために生成した thread impersonation の所有者です
 struct ReadSecurityToken;
 
 impl ReadSecurityToken {
 	//------------------------------------------------------------------------------
 	/**
-	 * 既存 thread token を上書きせず、利用可能な SACL 読取り特権だけを一時有効化します。
+	 * 既存 thread token を上書きせず、利用可能な SACL 読取り特権だけを一時有効化します
 	 *
 	 * # Returns
 	 *
-	 * 現 thread だけの impersonation を所有する guard。元の thread token は変更しません。
+	 * 現 thread だけの impersonation を所有する guard。元の thread token は変更しません
 	 *
 	 * # Errors
 	 *
 	 * 既存 thread token の存在、token・特権の取得、有効化の失敗。
-	 * impersonation 開始後の失敗は guard が解除してから返します。
+	 * impersonation 開始後の失敗は guard が解除してから返します
 	 *
 	 * # Notes
 	 *
-	 * guard は生成した thread で破棄します。RevertToSelf に失敗した場合は abort します。
+	 * guard は生成した thread で破棄します。RevertToSelf に失敗した場合は abort します
 	 */
 	//------------------------------------------------------------------------------
 	fn begin() -> Result<Self, IoFailure> {
@@ -676,7 +676,7 @@ impl ReadSecurityToken {
 impl Drop for ReadSecurityToken {
 	//------------------------------------------------------------------------------
 	/**
-	 * thread の一時特権を必ず解除します。解除不能なら特権を残して継続しません。
+	 * thread の一時特権を必ず解除します。解除不能なら特権を残して継続しません
 	 */
 	//------------------------------------------------------------------------------
 	fn drop(&mut self) {
@@ -689,12 +689,12 @@ impl Drop for ReadSecurityToken {
 
 //------------------------------------------------------------------------------
 /**
- * SACL と追加 backup stream が空であることを検査します。取得不能は明示的拒否です。
+ * SACL と追加 backup stream が空であることを検査します。取得不能は明示的拒否です
  *
  * # Errors
  *
  * 限定的な読取り特権の取得、descriptor の取得、非空 SACL、
- * 追加 stream の列挙失敗、または保全未対応の stream が存在する場合。
+ * 追加 stream の列挙失敗、または保全未対応の stream が存在する場合
  */
 //------------------------------------------------------------------------------
 pub(crate) fn check_supported_metadata(path: &Path) -> Result<(), IoFailure> {
@@ -714,16 +714,16 @@ pub(crate) fn check_supported_metadata(path: &Path) -> Result<(), IoFailure> {
 
 //------------------------------------------------------------------------------
 /**
- * BackupRead の header を完全列挙し、EA/object-ID 等の保全未対応 stream を拒否します。
+ * BackupRead の header を完全列挙し、EA/object-ID 等の保全未対応 stream を拒否します
  *
  * # Errors
  *
  * BackupRead の読込み・header・長さ・seek の失敗、列挙上限、
- * または通常データ・security 以外の stream や stream 名を検出した場合。
+ * または通常データ・security 以外の stream や stream 名を検出した場合
  *
  * # Notes
  *
- * BackupRead の context は成否を問わず abort 指定で解放します。
+ * BackupRead の context は成否を問わず abort 指定で解放します
  */
 //------------------------------------------------------------------------------
 fn check_backup_streams(file: &File) -> Result<(), IoFailure> {
@@ -806,19 +806,19 @@ fn check_backup_streams(file: &File) -> Result<(), IoFailure> {
 
 //------------------------------------------------------------------------------
 /**
- * 新規 stage に元 descriptor で内容を保存し、元作成時刻/属性を設定します。
+ * 新規 stage に元 descriptor で内容を保存し、元作成時刻/属性を設定します
  *
  * # Arguments
  *
- * - `path`: create_new で作成する、元対象と異なる新規 stage。
- * - `bytes`: stage へ全体を書き込む内容。
- * - `original`: owner/group/DACL・作成日時・属性の保持元。
- * - `restore_mtime`: `true` の場合だけ、元の更新日時も設定します。
+ * - `path`: create_new で作成する、元対象と異なる新規 stage
+ * - `bytes`: stage へ全体を書き込む内容
+ * - `original`: owner/group/DACL・作成日時・属性の保持元
+ * - `restore_mtime`: `true` の場合だけ、元の更新日時も設定します
  *
  * # Errors
  *
  * descriptor の検査、作成・書込み・flush/sync・日時・属性の設定失敗。
- * 途中 stage は削除せず、元対象には書き込みません。
+ * 途中 stage は削除せず、元対象には書き込みません
  */
 //------------------------------------------------------------------------------
 pub(crate) fn create_stage(
@@ -896,11 +896,11 @@ pub(crate) fn create_stage(
 
 //------------------------------------------------------------------------------
 /**
- * keytool が stage を書いた後に、元の保持対象属性と作成時刻を再設定します。
+ * keytool が stage を書いた後に、元の保持対象属性と作成時刻を再設定します
  *
  * # Errors
  *
- * stage の取得、元作成日時または保持対象属性の設定失敗。
+ * stage の取得、元作成日時または保持対象属性の設定失敗
  */
 //------------------------------------------------------------------------------
 pub(crate) fn finish_stage(path: &Path, original: &FileSnapshot) -> Result<(), IoFailure> {
@@ -935,16 +935,16 @@ pub(crate) fn finish_stage(path: &Path, original: &FileSnapshot) -> Result<(), I
 /**
  * 置換の継承再計算で変わり得る DACL を、保存した元 ACL と保護状態へ正確に戻します。
  * 呼出し側は直前に stage の hash/実体 ID が target にあることを確認します。
- * 任意の権限追加は行わず、WRITE_DAC がなければ明示的に失敗します。
+ * 任意の権限追加は行わず、WRITE_DAC がなければ明示的に失敗します
  *
  * # Arguments
  *
- * - `path`: 呼出し側が stage の実体・hash と照合済みの置換先。
- * - `original`: 元 DACL と継承保護の保存値。
+ * - `path`: 呼出し側が stage の実体・hash と照合済みの置換先
+ * - `original`: 元 DACL と継承保護の保存値
  *
  * # Errors
  *
- * 保存 descriptor の検査、WRITE_DAC handle の取得、または DACL 設定の失敗。
+ * 保存 descriptor の検査、WRITE_DAC handle の取得、または DACL 設定の失敗
  */
 //------------------------------------------------------------------------------
 pub(crate) fn preserve_dacl(path: &Path, original: &FileSnapshot) -> Result<(), IoFailure> {
@@ -983,17 +983,17 @@ pub(crate) fn preserve_dacl(path: &Path, original: &FileSnapshot) -> Result<(), 
 
 //------------------------------------------------------------------------------
 /**
- * merge エラー無視 flag を使わず同 volume の recovery copy 付きで置換します。
+ * merge エラー無視 flag を使わず同 volume の recovery copy 付きで置換します
  *
  * # Arguments
  *
- * - `target`: 既存の置換先。呼出し側が直前に実体を照合します。
- * - `stage`: 同 volume に準備した置換元。
- * - `recovery`: 置換される実体の新規退避先。
+ * - `target`: 既存の置換先。呼出し側が直前に実体を照合します
+ * - `stage`: 同 volume に準備した置換元
+ * - `recovery`: 置換される実体の新規退避先
  *
  * # Errors
  *
- * ReplaceFileW の失敗。部分状態の照合・復旧は呼出し側が行い、ここでは証拠を削除しません。
+ * ReplaceFileW の失敗。部分状態の照合・復旧は呼出し側が行い、ここでは証拠を削除しません
  */
 //------------------------------------------------------------------------------
 pub(crate) fn replace(target: &Path, stage: &Path, recovery: &Path) -> Result<(), IoFailure> {
@@ -1027,16 +1027,16 @@ pub(crate) fn replace(target: &Path, stage: &Path, recovery: &Path) -> Result<()
 
 //------------------------------------------------------------------------------
 /**
- * 検証した欠落先だけへ stage を移動します。既存 path を上書きする flag はありません。
+ * 検証した欠落先だけへ stage を移動します。既存 path を上書きする flag はありません
  *
  * # Arguments
  *
- * - `stage`: 同 volume の検証済み復旧元。
- * - `target`: 呼出し側が根拠付きで欠落と判定した復旧先。
+ * - `stage`: 同 volume の検証済み復旧元
+ * - `target`: 呼出し側が根拠付きで欠落と判定した復旧先
  *
  * # Errors
  *
- * MoveFileW の失敗。既存対象を上書きしません。
+ * MoveFileW の失敗。既存対象を上書きしません
  */
 //------------------------------------------------------------------------------
 pub(crate) fn move_to_missing(stage: &Path, target: &Path) -> Result<(), IoFailure> {
@@ -1051,7 +1051,7 @@ pub(crate) fn move_to_missing(stage: &Path, target: &Path) -> Result<(), IoFailu
 
 //------------------------------------------------------------------------------
 /**
- * FILETIME の lossless な分解を行います。
+ * FILETIME の lossless な分解を行います
  */
 //------------------------------------------------------------------------------
 fn time(value: u64) -> FILETIME {
@@ -1063,15 +1063,15 @@ fn time(value: u64) -> FILETIME {
 
 //------------------------------------------------------------------------------
 /**
- * 不足する通常の親 directory を作り、最終 backup root だけを限定 ACL で固定します。
+ * 不足する通常の親 directory を作り、最終 backup root だけを限定 ACL で固定します
  *
  * # Returns
  *
- * 通常の親と限定 ACL を確認した、最終 root の canonical path。
+ * 通常の親と限定 ACL を確認した、最終 root の canonical path
  *
  * # Errors
  *
- * 親の作成・パス検査、最終 root の作成、または既存 root の限定 ACL 検査の失敗。
+ * 親の作成・パス検査、最終 root の作成、または既存 root の限定 ACL 検査の失敗
  */
 //------------------------------------------------------------------------------
 pub(crate) fn prepare_root(path: &Path) -> Result<PathBuf, IoFailure> {

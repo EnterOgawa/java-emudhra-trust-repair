@@ -1,7 +1,7 @@
 //------------------------------------------------------------------------------
 /*!
  * - ファイル: scan.rs
- * - 概要: 同期 worker 向けに読み取り診断・進捗・snapshot と変更計画を結び付けます。
+ * - 概要: 同期 worker 向けに読み取り診断・進捗・snapshot と変更計画を結び付けます
  * - バージョン: 01.00.00
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
@@ -11,7 +11,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  * 本ファイルには Apache License, Version 2.0 が適用されます。
- * ライセンス全文はプロジェクトルートの LICENSE を参照してください。
+ * ライセンス全文はプロジェクトルートの LICENSE を参照してください
  * <https://www.apache.org/licenses/LICENSE-2.0>
  *
  * 会社名: EnterSystem
@@ -20,12 +20,12 @@
  *
  * ```text
  * VerNo.        author        update      comment
- * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成。
+ * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
  * ```
  *
  * 備考:
  *
- * 全操作は read-only です。鍵を含むストアの byte 列や外部出力全体は結果へ保持しません。
+ * 全操作は read-only です。鍵を含むストアの byte 列や外部出力全体は結果へ保持しません
  */
 //------------------------------------------------------------------------------
 
@@ -43,126 +43,126 @@ use crate::process::{
 };
 use crate::snapshot::{FileIdentity, FileSafetyError, FileSnapshot, read_snapshot};
 
-/// 自動検出するストアの password を明示的に指定します。標準値の自動試行はしません。
+/// 自動検出するストアの password を明示的に指定します。標準値の自動試行はしません
 pub struct BuiltinPasswords<'a> {
-	/// cacerts に使用する、利用者が明示した password。
+	/// cacerts に使用する、利用者が明示した password
 	pub cacerts: &'a StorePassword,
-	/// 存在する jssecacerts に使用する password。cacerts と同じ参照も指定できます。
+	/// 存在する jssecacerts に使用する password。cacerts と同じ参照も指定できます
 	pub jssecacerts: &'a StorePassword,
 }
 
-/// 利用者が明示追加した一つの custom truststore です。
+/// 利用者が明示追加した一つの custom truststore です
 #[derive(Debug)]
 pub struct CustomStore {
-	/// 対象の絶対 path。選択 root の外も明示指定で検査できます。
+	/// 対象の絶対 path。選択 root の外も明示指定で検査できます
 	pub path: PathBuf,
-	/// このファイル用の password。Debug は内容を公開しません。
+	/// このファイル用の password。Debug は内容を公開しません
 	pub password: StorePassword,
 }
 
-/// UI が OS 言語に応じた進捗文言へ変換する工程です。
+/// UI が OS 言語に応じた進捗文言へ変換する工程です
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanPhase {
-	/// 選択した Java の snapshot を再照合しています。
+	/// 選択した Java の snapshot を再照合しています
 	ValidateJava,
-	/// 対象の実体/hash/metadata を取得しています。
+	/// 対象の実体/hash/metadata を取得しています
 	Snapshot,
-	/// 一回目の keytool の全一覧を取得しています。
+	/// 一回目の keytool の全一覧を取得しています
 	ListInventory,
-	/// 二回目の全一覧および前後 snapshot を照合しています。
+	/// 二回目の全一覧および前後 snapshot を照合しています
 	VerifyUnchanged,
-	/// 全群の診断を終了しました。
+	/// 全群の診断を終了しました
 	Complete,
 }
 
-/// 同期 worker の実際の工程に対応する進捗です。時間から百分率を作りません。
+/// 同期 worker の実際の工程に対応する進捗です。時間から百分率を作りません
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScanProgress {
-	/// 現在の工程。
+	/// 現在の工程
 	pub phase: ScanPhase,
-	/// 選択順の 0 始まりの位置。Java/完了では None。
+	/// 選択順の 0 始まりの位置。Java/完了では None
 	pub input_index: Option<usize>,
-	/// 重複統合前の入力総数。
+	/// 重複統合前の入力総数
 	pub input_count: usize,
 }
 
-/// 成功終了した keytool が出す既知の情報通知です。診断の警告とは分離します。
+/// 成功終了した keytool が出す既知の情報通知です。診断の警告とは分離します
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanNotice {
-	/// 明示 path で標準 cacerts を読んだ際の `use -cacerts` の操作案内。
+	/// 明示 path で標準 cacerts を読んだ際の `use -cacerts` の操作案内
 	ExplicitCacertsPath,
 }
 
-/// 実測した既知の警告です。すべて群全体の plan を抑止します。
+/// 実測した既知の警告です。すべて群全体の plan を抑止します
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanWarning {
-	/// 鍵を含む JKS に対して OpenJDK が表示する形式移行の警告。
+	/// 鍵を含む JKS に対して OpenJDK が表示する形式移行の警告
 	JksProprietaryFormat,
 }
 
-/// 一回の完全な一覧と、本文を保持しない既知メッセージです。
+/// 一回の完全な一覧と、本文を保持しない既知メッセージです
 #[derive(PartialEq, Eq)]
 pub(crate) struct ListedStore {
-	/// 完全に解析した inventory。
+	/// 完全に解析した inventory
 	pub(crate) inventory: StoreInventory,
-	/// 明示 cacerts path の情報通知。
+	/// 明示 cacerts path の情報通知
 	notices: Vec<ScanNotice>,
-	/// すべて変更を抑止する警告。
+	/// すべて変更を抑止する警告
 	pub(crate) warnings: Vec<ScanWarning>,
 }
 
-/// 変更できなかった詳細です。本文を自由文へ潰さず GUI に判定材料を渡します。
+/// 変更できなかった詳細です。本文を自由文へ潰さず GUI に判定材料を渡します
 #[derive(Debug)]
 pub enum ScanFailure {
-	/// 実体や metadata の読み取り失敗。
+	/// 実体や metadata の読み取り失敗
 	File(
-		/// 通常ファイルとして扱えなかった元の理由。
+		/// 通常ファイルとして扱えなかった元の理由
 		FileSafetyError,
 	),
-	/// Java の入力からの変化または実行検証の失敗。
+	/// Java の入力からの変化または実行検証の失敗
 	Java(
-		/// 選択済み Java を再照合できなかった理由。
+		/// 選択済み Java を再照合できなかった理由
 		JavaError,
 	),
-	/// keytool の起動・上限・中断・終了の失敗。
+	/// keytool の起動・上限・中断・終了の失敗
 	Process(
-		/// 一覧を取得する keytool の実行失敗。
+		/// 一覧を取得する keytool の実行失敗
 		ProcessError,
 	),
-	/// 全一覧の解析失敗。外部出力は含みません。
+	/// 全一覧の解析失敗。外部出力は含みません
 	Inventory(
-		/// 出力本文を含めない、RFC 解析の失敗位置と理由。
+		/// 出力本文を含めない、RFC 解析の失敗位置と理由
 		InventoryError,
 	),
-	/// stderr に未知または警告の出力がありました。本文を保持しません。
+	/// stderr に未知または警告の出力がありました。本文を保持しません
 	UnrecognizedStderr,
-	/// 元 byte で識別した形式と一覧の形式が一致しません。
+	/// 元 byte で識別した形式と一覧の形式が一致しません
 	FormatMismatch,
-	/// 二つの全 inventory が一致しません。
+	/// 二つの全 inventory が一致しません
 	InventoryChanged,
 }
 
-/// 一つの実体に対応する診断と後続の再照合材料です。
+/// 一つの実体に対応する診断と後続の再照合材料です
 #[derive(Debug)]
 pub struct StoreScan {
-	/// 同一実体へ統合した入力 path の全一覧。
+	/// 同一実体へ統合した入力 path の全一覧
 	input_paths: Vec<PathBuf>,
-	/// 安全なファイル検査に合格した場合の診断前 snapshot。
+	/// 安全なファイル検査に合格した場合の診断前 snapshot
 	snapshot: Option<FileSnapshot>,
-	/// DER 照合と群全体の計画可否に使用する診断。
+	/// DER 照合と群全体の計画可否に使用する診断
 	report: ScanReport,
-	/// 上記とは別に表示できる keytool 固有の操作案内。
+	/// 上記とは別に表示できる keytool 固有の操作案内
 	notices: Vec<ScanNotice>,
-	/// 形式やセキュリティ上の既知警告。全群の変更を抑止します。
+	/// 形式やセキュリティ上の既知警告。全群の変更を抑止します
 	warnings: Vec<ScanWarning>,
-	/// 診断失敗の型付き詳細。秘密や keytool 全文は含めません。
+	/// 診断失敗の型付き詳細。秘密や keytool 全文は含めません
 	failure: Option<ScanFailure>,
 }
 
 impl StoreScan {
 	//------------------------------------------------------------------------------
 	/**
-	 * 重複指定を統合した元の全 path を返します。
+	 * 重複指定を統合した元の全 path を返します
 	 */
 	//------------------------------------------------------------------------------
 	pub fn input_paths(&self) -> &[PathBuf] {
@@ -171,7 +171,7 @@ impl StoreScan {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 元実体の再照合材料を返します。ファイル検査失敗時は None。
+	 * 元実体の再照合材料を返します。ファイル検査失敗時は None
 	 */
 	//------------------------------------------------------------------------------
 	pub fn snapshot(&self) -> Option<&FileSnapshot> {
@@ -180,7 +180,7 @@ impl StoreScan {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 全 inventory と判定理由を持つ、不変の診断を返します。
+	 * 全 inventory と判定理由を持つ、不変の診断を返します
 	 */
 	//------------------------------------------------------------------------------
 	pub fn report(&self) -> &ScanReport {
@@ -189,7 +189,7 @@ impl StoreScan {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 正確に識別できた操作案内だけを返します。
+	 * 正確に識別できた操作案内だけを返します
 	 */
 	//------------------------------------------------------------------------------
 	pub fn notices(&self) -> &[ScanNotice] {
@@ -198,7 +198,7 @@ impl StoreScan {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 全群の適用を抑止する、実測済みの既知警告を返します。
+	 * 全群の適用を抑止する、実測済みの既知警告を返します
 	 */
 	//------------------------------------------------------------------------------
 	pub fn warnings(&self) -> &[ScanWarning] {
@@ -207,7 +207,7 @@ impl StoreScan {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 解析や I/O 失敗を GUI が翻訳できる形で返します。
+	 * 解析や I/O 失敗を GUI が翻訳できる形で返します
 	 */
 	//------------------------------------------------------------------------------
 	pub fn failure(&self) -> Option<&ScanFailure> {
@@ -215,19 +215,19 @@ impl StoreScan {
 	}
 }
 
-/// 選択された群全体の読み取り結果です。一部だけの成功から計画を作りません。
+/// 選択された群全体の読み取り結果です。一部だけの成功から計画を作りません
 #[derive(Debug)]
 pub struct ScanGroup {
-	/// Java の選択時点の snapshot。transaction は実行直前にも再照合します。
+	/// Java の選択時点の snapshot。transaction は実行直前にも再照合します
 	java_snapshots: [FileSnapshot; 3],
-	/// 実体の重複を統合したストア群。
+	/// 実体の重複を統合したストア群
 	stores: Vec<StoreScan>,
 }
 
 impl ScanGroup {
 	//------------------------------------------------------------------------------
 	/**
-	 * cacerts/jssecacerts/custom を含む、今回検査したファイルの範囲を返します。
+	 * cacerts/jssecacerts/custom を含む、今回検査したファイルの範囲を返します
 	 */
 	//------------------------------------------------------------------------------
 	pub fn stores(&self) -> &[StoreScan] {
@@ -236,7 +236,7 @@ impl ScanGroup {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * release/java/keytool の診断時 snapshot を返します。
+	 * release/java/keytool の診断時 snapshot を返します
 	 */
 	//------------------------------------------------------------------------------
 	pub fn java_snapshots(&self) -> &[FileSnapshot; 3] {
@@ -245,20 +245,20 @@ impl ScanGroup {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 全群の診断が合格し、対象がある場合だけ未適用の計画を返します。
+	 * 全群の診断が合格し、対象がある場合だけ未適用の計画を返します
 	 *
 	 * # Arguments
 	 *
-	 * - `policy`: 診断時の ID と一致すべき対策定義。
+	 * - `policy`: 診断時の ID と一致すべき対策定義
 	 *
 	 * # Returns
 	 *
-	 * 対象のあるストアだけを含む、まだ適用していない計画。
+	 * 対象のあるストアだけを含む、まだ適用していない計画
 	 *
 	 * # Errors
 	 *
 	 * 一つでも失敗/警告/変更不可がある、定義が異なる、対象ゼロなら [`PlanError`]。
-	 * 計画生成は disk を再照合しないため、後続は必ず各 snapshot を再検査します。
+	 * 計画生成は disk を再照合しないため、後続は必ず各 snapshot を再検査します
 	 */
 	//------------------------------------------------------------------------------
 	pub fn plan(&self, policy: &Policy) -> Result<ChangePlan, PlanError> {
@@ -275,23 +275,23 @@ impl ScanGroup {
 /**
  * 自動検出二種と明示 custom を読み取り診断します。同期の単一 worker から呼べます。
  * progress は呼出し元と同じスレッドで実行し、UI は channel へ転送できます。
- * 中断時も子の回収後に戻ります。元ファイルへの write/属性変更/削除は行いません。
+ * 中断時も子の回収後に戻ります。元ファイルへの write/属性変更/削除は行いません
  *
  * Java または必須ストアの失敗も結果へ残し、群全体の plan を無効にします。
- * 二回の全 inventory と診断前後・全群終了時の hash/ID/metadata の一致を必要とします。
+ * 二回の全 inventory と診断前後・全群終了時の hash/ID/metadata の一致を必要とします
  *
  * # Arguments
  *
- * - `environment`: 検証済み Java。診断前後に三ファイルを再照合します。
- * - `policy`: 全ストアに共通して用いる検証済み対策定義。
- * - `passwords`: cacerts と jssecacerts の明示的な認証入力。
- * - `custom`: 利用者が追加したパスと認証入力。
- * - `cancellation`: 子の実行を含めて監視する中断要求。
- * - `progress`: 同期実行する工程通知。UI 更新は呼出し側で転送します。
+ * - `environment`: 検証済み Java。診断前後に三ファイルを再照合します
+ * - `policy`: 全ストアに共通して用いる検証済み対策定義
+ * - `passwords`: cacerts と jssecacerts の明示的な認証入力
+ * - `custom`: 利用者が追加したパスと認証入力
+ * - `cancellation`: 子の実行を含めて監視する中断要求
+ * - `progress`: 同期実行する工程通知。UI 更新は呼出し側で転送します
  *
  * # Returns
  *
- * 入力範囲全体の診断。失敗・中断も各ストアの構造化結果に保持します。
+ * 入力範囲全体の診断。失敗・中断も各ストアの構造化結果に保持します
  */
 //------------------------------------------------------------------------------
 pub fn scan_java(
@@ -448,21 +448,21 @@ pub fn scan_java(
 
 //------------------------------------------------------------------------------
 /**
- * 一つの実体に対し、二回の keytool と間の hash/metadata/全 inventory を照合します。
+ * 一つの実体に対し、二回の keytool と間の hash/metadata/全 inventory を照合します
  *
  * # Arguments
  *
- * - `environment`: 一覧を取得する検証済み Java。
- * - `policy`: DER と抑止理由の判定に用いる定義。
- * - `path`: 表示・再照合へ保持する入力パス。
- * - `snapshot`: 最初に取得済みの実体情報。診断結果へ所有権を移します。
- * - `password`: このストアの明示的な認証入力。
- * - `cancellation`: 各 keytool 実行で監視する中断要求。
- * - `progress`: 同じ worker 上で呼ぶ工程通知。
+ * - `environment`: 一覧を取得する検証済み Java
+ * - `policy`: DER と抑止理由の判定に用いる定義
+ * - `path`: 表示・再照合へ保持する入力パス
+ * - `snapshot`: 最初に取得済みの実体情報。診断結果へ所有権を移します
+ * - `password`: このストアの明示的な認証入力
+ * - `cancellation`: 各 keytool 実行で監視する中断要求
+ * - `progress`: 同じ worker 上で呼ぶ工程通知
  *
  * # Returns
  *
- * 二回の全 inventory と前後の実体が一致した診断、または詳細を持つ失敗診断。
+ * 二回の全 inventory と前後の実体が一致した診断、または詳細を持つ失敗診断
  */
 //------------------------------------------------------------------------------
 fn scan_store(
@@ -529,22 +529,22 @@ fn scan_store(
 
 //------------------------------------------------------------------------------
 /**
- * 成功終了・既知 stderr・元形式・RFC 全文の全条件に合格する一覧だけを返します。
+ * 成功終了・既知 stderr・元形式・RFC 全文の全条件に合格する一覧だけを返します
  *
  * # Arguments
  *
- * - `environment`: keytool の実体を提供する検証済み Java。
- * - `snapshot`: 一覧取得前後に同一性を確認する元ストア。
- * - `password`: この一回の一覧取得だけで借用する秘密。
- * - `cancellation`: keytool の開始前と収集中に監視する中断要求。
+ * - `environment`: keytool の実体を提供する検証済み Java
+ * - `snapshot`: 一覧取得前後に同一性を確認する元ストア
+ * - `password`: この一回の一覧取得だけで借用する秘密
+ * - `cancellation`: keytool の開始前と収集中に監視する中断要求
  *
  * # Returns
  *
- * 完全に解析した一覧と、識別済みの案内・警告。
+ * 完全に解析した一覧と、識別済みの案内・警告
  *
  * # Errors
  *
- * 元 snapshot の変化、子の失敗、未知の stderr、または RFC 解析の不整合。
+ * 元 snapshot の変化、子の失敗、未知の stderr、または RFC 解析の不整合
  */
 //------------------------------------------------------------------------------
 pub(crate) fn list(
@@ -621,7 +621,7 @@ pub(crate) fn list(
 
 //------------------------------------------------------------------------------
 /**
- * 不完全な一覧を含まない失敗を作り、元ファイルへの変更がない状態で返します。
+ * 不完全な一覧を含まない失敗を作り、元ファイルへの変更がない状態で返します
  */
 //------------------------------------------------------------------------------
 fn failed(
