@@ -4,6 +4,16 @@ Javaの版はそのままで、eMudhra関連ルートの信頼を解除したい
 そんな環境で、[Oracleの回避策](https://ops.java/emudhra)に沿って関連4ルートを信頼ストアから削除する、Windows用アプリです。
 変更前のバックアップを作り、必要になったらアプリから元に戻せます。
 
+## 📦 ダウンロード
+
+[最新のリリース](https://github.com/EnterOgawa/java-emudhra-trust-repair/releases/latest)から、
+Windows x64用の **`JavaTrustRepair-0.1.0-windows-x64.zip`** をダウンロードし、展開してください。
+ZIPには `JavaTrustRepair.exe` と必要な許諾文を同梱しています。Rustやビルドツールの導入は不要です。
+
+公開EXEは **ENTER SYSTEM, K.K.** の企業名証明書で署名し、タイムスタンプを付けています。
+EXE単体を取得する場合は、同じリリースの `THIRD_PARTY_LICENSES.txt` も保存してください。
+`SHA256SUMS.txt` には配布ファイルのSHA-256を記載しています。
+
 ## 🔧 ソースからビルドする
 
 Windows x64で、次を用意してください。
@@ -25,7 +35,7 @@ rustup show
 直接 `cargo build` を実行したときの生成物はCargo内部のtarget側に残ります。受渡しには `build.ps1` を使ってください。
 `output/` の生成物はGit管理・ソース公開の対象外です。
 `.cargo/config.toml` でWindows x64とstatic CRTを指定しています。この設定も一緒に使ってください。
-EXEとタイトルバーには同じ自作の盾アイコンを使います。Windows SDKのresource compilerで
+EXEとタイトルバーには同じ自作の証明書・J・修復アイコンを使います。Windows SDKのresource compilerで
 アイコンを埋め込み、生成できない場合はビルドを停止します。PNG/ICOはソースに同梱しています。
 ビルドにJavaや署名証明書は不要です。アプリの利用時には、選択するJava環境が必要です。
 
@@ -85,7 +95,7 @@ OSにあるMSゴシックを優先し、利用できない場合や不足する�
 
 Copyright (c) 2026 EnterSystem CO.,LTD. / Author: Shunji Ogawa
 
-更新: 2026/10/26 / Java内バックアップと管理者案内、MSゴシック優先の表示に対応。
+更新: 2026/10/27 / 署名済みWindows x64版のダウンロード案内を追加。
 
 自作ソースは [Apache License 2.0](LICENSE) です。
 フォント・証明書データ・依存crateについては [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) をご覧ください。
