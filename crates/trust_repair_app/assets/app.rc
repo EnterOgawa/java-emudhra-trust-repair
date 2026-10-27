@@ -1,8 +1,8 @@
 //------------------------------------------------------------------------------
 /*
  * ファイル: app.rc
- * 概要: Explorer と native window で共通の専用アプリアイコンを指定します
- * バージョン: 01.00.00
+ * 概要: Explorer と native window の専用アイコン、および製品版情報を指定します
+ * バージョン: 01.01.00
  * 作成日: 2026/10/27
  * 制作者: Shunji Ogawa
  * 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -13,8 +13,41 @@
  *
  * 更新履歴:
  * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
+ * Ver.01.01.00  Shunji Ogawa  2026/10/27  Cargo と一致する Windows の製品版情報を追加
  *
- * 備考: build.rs が assets/app.ico を実行ファイルへ埋め込みます
+ * 備考: build.rs が渡す Cargo の製品版数と assets/app.ico を実行ファイルへ埋め込みます
  */
 //------------------------------------------------------------------------------
+#include <winver.h>
+
 1 ICON "assets/app.ico"
+
+// 製品の版数は build.rs から渡し、ソースファイルの独立版数と区別する
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION APP_VERSION_MAJOR,APP_VERSION_MINOR,APP_VERSION_PATCH,0
+PRODUCTVERSION APP_VERSION_MAJOR,APP_VERSION_MINOR,APP_VERSION_PATCH,0
+FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+FILEFLAGS 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+FILESUBTYPE 0
+BEGIN
+	BLOCK "StringFileInfo"
+	BEGIN
+		BLOCK "040904B0"
+		BEGIN
+			VALUE "CompanyName", "EnterSystem CO.,LTD.\0"
+			VALUE "FileDescription", "Java eMudhra Trust Store Repair\0"
+			VALUE "FileVersion", APP_VERSION_TEXT "\0"
+			VALUE "InternalName", "JavaTrustRepair\0"
+			VALUE "LegalCopyright", "Copyright (c) 2026 EnterSystem CO.,LTD.\0"
+			VALUE "OriginalFilename", "JavaTrustRepair.exe\0"
+			VALUE "ProductName", "Java Trust Repair - eMudhra\0"
+			VALUE "ProductVersion", APP_VERSION_TEXT "\0"
+		END
+	END
+	BLOCK "VarFileInfo"
+	BEGIN
+		VALUE "Translation", 0x0409, 1200
+	END
+END

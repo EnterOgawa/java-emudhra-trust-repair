@@ -2,7 +2,7 @@
 /*!
  * - ファイル: main.rs
  * - 概要: 日英の native 画面から診断・適用・復元・未完了復旧を提供します
- * - バージョン: 01.00.00
+ * - バージョン: 01.01.00
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -21,6 +21,7 @@
  * ```text
  * VerNo.        author        update      comment
  * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
+ * Ver.01.01.00  Shunji Ogawa  2026/10/27  CLI から Cargo と一致する製品版数を確認可能にする
  * ```
  *
  * 備考:
@@ -1841,7 +1842,7 @@ impl Drop for TrustRepairApp {
 
 //------------------------------------------------------------------------------
 /**
- * Windows 表示言語で native GUI を開始します。資材確認と明示 QA 以外の引数は拒否します
+ * Windows 表示言語で native GUI を開始します。版数・使用方法・資材確認と明示 QA に対応します
  *
  * # Arguments
  *
@@ -1859,10 +1860,16 @@ impl Drop for TrustRepairApp {
 //------------------------------------------------------------------------------
 fn run(language: Language) -> Result<(), String> {
 	let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+	// 明示の版数確認は、Java の走査や native 画面の生成前に返す
+	if arguments.len() == 1 && (arguments[0] == "--version" || arguments[0] == "-V") {
+		println!("java-trust-repair {}", env!("CARGO_PKG_VERSION"));
+		return Ok(());
+	}
 	// 明示の help 操作だけは、native 画面を作らず使用方法を返す
 	if arguments.len() == 1 && (arguments[0] == "--help" || arguments[0] == "-h") {
 		println!(
-			"java-trust-repair [--verify-binary | --help]\nNo arguments: native GUI using the Windows display language."
+			"java-trust-repair {}\nUsage: java-trust-repair [--version | --verify-binary | --help]\nNo arguments: native GUI using the Windows display language.",
+			env!("CARGO_PKG_VERSION")
 		);
 		return Ok(());
 	}
@@ -1885,7 +1892,8 @@ fn run(language: Language) -> Result<(), String> {
 	// 明示の資材確認では、信頼ストアを診断せず埋込み定義と font を確認する
 	if arguments.len() == 1 && arguments[0] == "--verify-binary" {
 		println!(
-			"Binary verification OK: policy={}, roots={}, font_bytes={}, ui_langid={}; ui_font={}; trust stores were not inspected.",
+			"Binary verification OK: version={}, policy={}, roots={}, font_bytes={}, ui_langid={}; ui_font={}; trust stores were not inspected.",
+			env!("CARGO_PKG_VERSION"),
 			policy.id(),
 			policy.roots().len(),
 			ui_style::JAPANESE_FONT.len(),

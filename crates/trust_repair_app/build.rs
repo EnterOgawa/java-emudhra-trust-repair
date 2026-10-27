@@ -1,8 +1,8 @@
 //------------------------------------------------------------------------------
 /*!
  * - ファイル: build.rs
- * - 概要: Windows の実行ファイルへアプリアイコンを埋め込みます
- * - バージョン: 01.00.00
+ * - 概要: Windows の実行ファイルへアプリアイコンと製品版数を埋め込みます
+ * - バージョン: 01.01.00
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -21,11 +21,12 @@
  * ```text
  * VerNo.        author        update      comment
  * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
+ * Ver.01.01.00  Shunji Ogawa  2026/10/27  Cargo の製品版数を Windows の版情報へ連携
  * ```
  *
  * 備考:
  *
- * 入力は assets/app.rc と app.ico、生成物は Cargo の OUT_DIR に限定します。
+ * 入力は assets/app.rc と app.ico、Cargo の製品版数です。生成物は OUT_DIR に限定します。
  * Windows SDK の resource compiler を使用し、ネットワーク取得や実機設定変更は行いません
  */
 //------------------------------------------------------------------------------
@@ -33,7 +34,7 @@
 
 //------------------------------------------------------------------------------
 /**
- * RC と ICO の変更時に再実行し、アプリ exe だけへ icon resource をリンクします
+ * RC・ICO・製品版数の変更時に再実行し、アプリ exe だけへ icon と版情報をリンクします
  *
  * # Returns
  *
@@ -52,6 +53,14 @@
 fn main() -> Result<(), embed_resource::CompilationResult> {
 	println!("cargo:rerun-if-changed=assets/app.rc");
 	println!("cargo:rerun-if-changed=assets/app.ico");
-	embed_resource::compile_for("assets/app.rc", ["java-trust-repair"], embed_resource::NONE)
+	println!("cargo:rerun-if-env-changed=CARGO_PKG_VERSION");
+	// Cargo の製品版数を唯一の入力とし、RC 内に独立した製品版数を残さない
+	let version_definitions = [
+		format!("APP_VERSION_MAJOR={}", env!("CARGO_PKG_VERSION_MAJOR")),
+		format!("APP_VERSION_MINOR={}", env!("CARGO_PKG_VERSION_MINOR")),
+		format!("APP_VERSION_PATCH={}", env!("CARGO_PKG_VERSION_PATCH")),
+		format!("APP_VERSION_TEXT=\"{}\"", env!("CARGO_PKG_VERSION")),
+	];
+	embed_resource::compile_for("assets/app.rc", ["java-trust-repair"], version_definitions)
 		.manifest_required()
 }

@@ -7,7 +7,7 @@ Javaのバージョンを変更せずに、eMudhra関連のルート証明書を
 ## 📦 ダウンロード
 
 [最新のリリース](https://github.com/EnterOgawa/java-emudhra-trust-repair/releases/latest)から、
-Windows x64用の **`JavaTrustRepair-0.1.0-windows-x64.zip`** をダウンロードし、展開してください。
+Windows x64用の **`JavaTrustRepair-1.0.0-windows-x64.zip`** をダウンロードし、展開してください。
 ZIPには `JavaTrustRepair.exe` と必要な許諾文を同梱しています。Rustやビルドツールの導入は不要です。
 
 公開EXEは **ENTER SYSTEM, K.K.** の企業名証明書で署名し、タイムスタンプを付けています。
@@ -37,6 +37,7 @@ rustup show
 `.cargo/config.toml` でWindows x64とstatic CRTを指定しています。この設定も一緒に使ってください。
 EXEとタイトルバーには同じ自作の証明書・J・修復アイコンを使います。Windows SDKのresource compilerで
 アイコンを埋め込み、生成できない場合はビルドを停止します。PNG/ICOはソースに同梱しています。
+製品版数はCargoの設定から、EXEのファイルバージョン・製品バージョンと `--version` の表示へ共通で反映します。
 ビルドにJavaや署名証明書は不要です。アプリの利用時には、選択するJava環境が必要です。
 
 通常の単体テストとドキュメント内の例も確認できます。
@@ -95,7 +96,7 @@ OSにあるMSゴシックを優先し、利用できない場合や不足する�
 
 Copyright (c) 2026 EnterSystem CO.,LTD. / Author: Shunji Ogawa
 
-更新: 2026/10/27 / 署名済みWindows x64版のダウンロード案内を追加。
+更新: 2026/10/27 / Windows x64向け正式版 v1.0.0 のダウンロード案内と製品版数の確認方法を反映。
 
 自作ソースは [Apache License 2.0](LICENSE) です。
 フォント・証明書データ・依存crateについては [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) をご覧ください。
