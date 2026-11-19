@@ -7,7 +7,7 @@ Javaのバージョンを変更せずに、eMudhra関連のルート証明書を
 ## 📦 ダウンロード
 
 [最新のリリース](https://github.com/EnterOgawa/java-emudhra-trust-repair/releases/latest)から、
-Windows x64用の **`JavaTrustRepair-1.0.0-windows-x64.zip`** をダウンロードし、展開してください。
+Windows x64用の **`JavaTrustRepair-1.1.0-windows-x64.zip`** をダウンロードし、展開してください。
 ZIPには `JavaTrustRepair.exe` と必要な許諾文を同梱しています。Rustやビルドツールの導入は不要です。
 
 公開EXEは **ENTER SYSTEM, K.K.** の企業名証明書で署名し、タイムスタンプを付けています。
@@ -75,6 +75,14 @@ Javaやバックアップを移動・コピーした場合は自動復元でき�
 
 このリポジトリではビルド用のソースと必要な資材を公開しています。ソースからビルドしたEXEには署名は付きません。
 
+## 🔎 Javaの脆弱性情報
+
+Javaフォルダを選ぶと、対応や確認が必要なCVEを深刻度の高い順に表示します。表の見出しで並べ替え、行をクリックすると影響条件、公式勧告、修正版やダウンロード先を確認できます。
+
+Oracle Java SEとEclipse TemurinのJava 11・17・21・25に対応します。起動時に公式勧告をバックグラウンドで確認し、新しいCVEを取り込みます。Temurin固有の影響範囲や修正ビルドが確定できない項目は「要確認」と表示します。[Oracleの公式配信](https://www.oracle.com/a/tech/docs/security-alerts/oracle-cpu-csaf-rss.xml) · [OpenJDKの公式勧告](https://openjdk.org/groups/vulnerability/advisories/)
+
+通常起動時は、取得した定義を `%LOCALAPPDATA%\EnterSystem\JavaTrustRepair\advisories` に保存します。管理者として実行した場合は、取得した定義をその起動中にメモリ内で使います。通信できないときも、利用可能な保存済み定義や内蔵定義で確認できます。独自に配布した `java-advisories.json` は、EXEと同じ場所に置いて利用できます。
+
 ## 🖥️ 対応と影響の範囲
 
 - Windows 10/11 x64、Windows用Java **11 / 17 / 21 / 25 LTS** のJDK/JREが対象です。
@@ -96,7 +104,7 @@ OSにあるMSゴシックを優先し、利用できない場合や不足する�
 
 Copyright (c) 2026 EnterSystem CO.,LTD. / Author: Shunji Ogawa
 
-更新: 2026/10/27 / Windows x64向け正式版 v1.0.0 のダウンロード案内と製品版数の確認方法を反映。
+2026/11/19に v1.1.0 のダウンロードとCVEの確認方法を追記しました。
 
 自作ソースは [Apache License 2.0](LICENSE) です。
 フォント・証明書データ・依存crateについては [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) をご覧ください。

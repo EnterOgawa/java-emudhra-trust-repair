@@ -2,7 +2,7 @@
 /*!
  * - ファイル: transaction.rs
  * - 概要: 検証済み診断から backup・順次適用・rollback・復元を実行します
- * - バージョン: 01.00.00
+ * - バージョン: 01.00.01
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -21,6 +21,7 @@
  * ```text
  * VerNo.        author        update      comment
  * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
+ * Ver.01.00.01  Shunji Ogawa  2026/11/19  旧版の退避検証と置換後の Archive 属性の補正
  * ```
  *
  * 備考:
@@ -45,8 +46,9 @@ use crate::scan::{ScanFailure, ScanGroup, list};
 use crate::snapshot::{FileSafetyError, FileSnapshot, read_snapshot};
 use crate::transaction_data::{
 	Journal, JournalEvent, JournalStatus, MAX_STORES, Manifest, ManifestItem, SavedInventory,
-	backup_name, load_manifest, read_journal, same_content_metadata, same_preserved_metadata,
-	valid_id, work_directory, write_manifest, write_new,
+	archive_added, backup_name, load_manifest, read_journal, same_content_metadata,
+	same_preserved_metadata, same_replaced_content_metadata, valid_id, work_directory,
+	write_manifest, write_new,
 };
 use crate::transaction_io::{self as native, IoFailure};
 
@@ -1124,7 +1126,7 @@ fn rollback_apply(
 			)?;
 			let item = &manifest.items[index];
 			let target = item.original.canonical_path();
-			let state = classify(item);
+			let state = classify(item, true);
 			// 期待と矛盾する退避物がある対象を、自動 rollback で上書きしない
 			if conflicting_artifacts(&manifest.transaction_id, index, item, None) {
 				return Err(TransactionError::new(
@@ -1423,7 +1425,8 @@ fn verify_raw_backup(path: &Path, original: &FileSnapshot) -> Result<Vec<u8>, Tr
  *
  * # Errors
  *
- * 元実体の ID・内容・保持 metadata が期待と一致しないか、退避物を取得できない場合
+ * 元実体の ID・内容・保持 metadata が不一致、または退避物を取得できない場合。
+ * 同一実体への Archive の追加は受け付けます
  */
 //------------------------------------------------------------------------------
 fn verify_recovery_copy(path: &Path, expected: &FileSnapshot) -> Result<(), TransactionError> {
@@ -1432,7 +1435,7 @@ fn verify_recovery_copy(path: &Path, expected: &FileSnapshot) -> Result<(), Tran
 	let (actual, _) = snapshot(path, TransactionPhase::Verify)?;
 	// 回復用コピーは元実体の ID と内容・metadata の両方を満たす場合だけ採用する
 	if actual.identity() != expected.identity()
-		|| !same_content_metadata(
+		|| !same_replaced_content_metadata(
 			&actual.at_path(expected.canonical_path().to_path_buf()),
 			expected,
 		) {
@@ -1496,10 +1499,15 @@ fn conflicting_artifacts(
 	let Ok(work) = work_directory(item.original.canonical_path(), id, index) else {
 		return true;
 	};
-	let mut copies = vec![
-		(work.join("apply.recovery"), &item.original),
-		(work.join("rollback.recovery"), &item.applied),
-	];
+	let apply_recovery = work.join(&item.recovery_name);
+	// 最初の元実体の退避物には、記録された file ID も要求する
+	match fs::symlink_metadata(&apply_recovery) {
+		Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+		Err(_) => return true,
+		Ok(_) if verify_recovery_copy(&apply_recovery, &item.original).is_err() => return true,
+		Ok(_) => {}
+	}
+	let mut copies = vec![(work.join("rollback.recovery"), &item.applied)];
 	// 復元操作が記録されている場合は、その操作の退避物も競合検査へ含める
 	if let Some(operation) = operation {
 		copies.push((
@@ -1523,7 +1531,7 @@ fn conflicting_artifacts(
 
 //------------------------------------------------------------------------------
 /**
- * file ID を要求するかを明示し、hash/metadata の一致しない path は拒否します
+ * 置換後の hash と metadata を照合します。同じ file ID への Archive の追加を許容します
  *
  * # Arguments
  *
@@ -1545,7 +1553,7 @@ fn verify_snapshot(
 ) -> Result<(), TransactionError> {
 	let (actual, _) = snapshot(path, phase)?;
 	// 内容と保持 metadata を必須とし、要求された場合は file ID の一致も確認する
-	if !same_content_metadata(&actual, expected)
+	if !same_replaced_content_metadata(&actual, expected)
 		|| identity && actual.identity() != expected.identity()
 	{
 		let mut error = TransactionError::new(TransactionCode::ExternalChange, phase);
@@ -1557,17 +1565,17 @@ fn verify_snapshot(
 
 //------------------------------------------------------------------------------
 /**
- * 置換した stage 本体と確認してから、元の DACL を保持します。未知実体へ権限を設定しません
+ * 置換した stage 本体と確認してから、元の DACL と属性を保持します
  *
  * # Arguments
  *
  * - `path`: 置換後の実パス
  * - `prepared`: 実パスへ移ったはずの検証済み stage
- * - `original`: 戻す DACL と保護状態を持つ元 snapshot
+ * - `original`: 戻す DACL と属性を持つ元 snapshot
  *
  * # Errors
  *
- * 置換後の実体が stage と一致しない、または元 DACL の設定に失敗した場合
+ * 置換後の実体が stage と一致しない、または元 DACL・属性の設定に失敗した場合
  */
 //------------------------------------------------------------------------------
 fn finish_replacement(
@@ -1586,6 +1594,11 @@ fn finish_replacement(
 	// 置換時の継承再計算で DACL が変わった場合だけ、保存した元値へ戻す
 	if !native::same_security(actual.security_descriptor(), original.security_descriptor()) {
 		native::preserve_dacl(path, original)
+			.map_err(|error| native_error(TransactionPhase::Verify, path, error))?;
+	}
+	// Windows が追加した Archive だけを取り除き、選択されたストアの元属性へ戻す
+	if archive_added(actual.attributes(), original.attributes()) {
+		native::restore_attributes(path, &actual, original.attributes())
 			.map_err(|error| native_error(TransactionPhase::Verify, path, error))?;
 	}
 	#[cfg(feature = "internal-qa")]
@@ -1623,18 +1636,25 @@ fn snapshot(
  * 実体と metadata が既知のどちらにも一致しない場合は Unknown とし上書きを許しません
  */
 //------------------------------------------------------------------------------
-fn classify(item: &ManifestItem) -> ItemState {
+fn classify(item: &ManifestItem, replacement_started: bool) -> ItemState {
+	let matches = |actual: &FileSnapshot, expected: &FileSnapshot| {
+		if replacement_started {
+			same_replaced_content_metadata(actual, expected)
+		} else {
+			same_content_metadata(actual, expected)
+		}
+	};
 	// 元・適用後・欠落・未知を現物から区別し、不明な内容を復旧可能と推測しない
 	match read_snapshot(item.original.canonical_path(), MAX_INPUT_BYTES) {
 		Ok((actual, _))
 			if native::check_supported_metadata(item.original.canonical_path()).is_ok()
-				&& same_content_metadata(&actual, &item.original) =>
+				&& matches(&actual, &item.original) =>
 		{
 			ItemState::Original
 		}
 		Ok((actual, _))
 			if native::check_supported_metadata(item.original.canonical_path()).is_ok()
-				&& same_content_metadata(&actual, &item.applied) =>
+				&& matches(&actual, &item.applied) =>
 		{
 			ItemState::Applied
 		}
@@ -1926,6 +1946,7 @@ pub fn list_history(options: &TransactionOptions) -> Result<Vec<HistoryEntry>, T
 //------------------------------------------------------------------------------
 /**
  * 選択した ID の schema/backup/journal と全実体を照合します。
+ * 同じ schema・定義の旧版を読めます。置換を開始した同一実体への Archive 追加を許容します。
  * 原/適用後/欠落/未知を区別し、末尾破断を Applied/Restored と判定しません。
  * 初回 journal の未作成は Recoverable とし、実在 journal の末尾破断とは区別します。
  * この読み取り結果は復元許可の代わりではなく、復元関数が lock 後に再検査します
@@ -2038,7 +2059,8 @@ pub fn inspect_transaction(
 //------------------------------------------------------------------------------
 /**
  * 適用履歴を元へ戻します。password は inspect_transaction の stores 順で再供給します。
- * backup 整合性、同じ Java、記録した適用後 hash/metadata の全一致が必要です。
+ * backup 整合性、同じ Java、記録した適用後 hash/metadata の一致が必要です。
+ * 同じ実体への Archive の追加を許容し、置換後は保存した対象の属性を戻します。
  * 外部変更・不正 manifest・破損 backup は上書きしません。二重復元は AlreadyRestored。
  * 全 stage を検証後に復元を確定し、失敗時の部分状態を隠しません
  *
@@ -2209,6 +2231,7 @@ fn load_transaction(
 			));
 		}
 	};
+	let mut replacement_started = journal.started.clone();
 	let mut next_branch = 1;
 	let mut allowed = BTreeSet::from([
 		"manifest.json".to_owned(),
@@ -2241,6 +2264,9 @@ fn load_transaction(
 		}
 		allowed.insert(name);
 		journal = read_journal(&path, manifest.items.len())?;
+		for (started, new_started) in replacement_started.iter_mut().zip(&journal.started) {
+			*started |= *new_started;
+		}
 		journal_path = path;
 		next_branch += 1;
 	}
@@ -2276,7 +2302,7 @@ fn load_transaction(
 			if conflicting_artifacts(id, index, item, journal.operation_id.as_deref()) {
 				ItemState::Unknown
 			} else {
-				classify(item)
+				classify(item, replacement_started[index])
 			}
 		})
 		.collect();
@@ -2567,7 +2593,7 @@ fn restore_or_recover(
 			notify(&mut progress, phase, Some(index), count, false);
 			verify_saved_java(environment, &loaded.manifest)?;
 			// stage 準備中に対象の分類が変化した場合は、古い前提で置換しない
-			if classify(item) != loaded.states[index] {
+			if classify(item, true) != loaded.states[index] {
 				return Err(TransactionError::new(
 					TransactionCode::ExternalChange,
 					phase,
@@ -2658,7 +2684,7 @@ fn restore_or_recover(
 			.manifest
 			.items
 			.iter()
-			.all(|item| classify(item) == ItemState::Applied);
+			.all(|item| classify(item, true) == ItemState::Applied);
 		// 元が全件適用済みで rollback も完全な場合だけ、適用後へ戻った状態を認める
 		error.state = if error.rollback_errors.is_empty() && all_applied {
 			TransactionState::Applied
@@ -2765,7 +2791,7 @@ fn rollback_restore(
 				return Ok(());
 			}
 			// 既知の元状態から外れた対象は、自動 rollback の上書きを止める
-			if classify(item) != ItemState::Original {
+			if classify(item, true) != ItemState::Original {
 				return Err(TransactionError::new(
 					TransactionCode::ExternalChange,
 					TransactionPhase::Rollback,
@@ -2828,7 +2854,7 @@ fn rollback_restore(
 		.manifest
 		.items
 		.iter()
-		.all(|item| classify(item) == ItemState::Applied);
+		.all(|item| classify(item, true) == ItemState::Applied);
 	// 全件が元の適用後状態へ戻れた場合だけ、その完了記録を選ぶ
 	let event = if errors.is_empty() && all_applied {
 		JournalEvent::RestoreRolledBack

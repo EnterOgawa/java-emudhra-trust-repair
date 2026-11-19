@@ -2,7 +2,7 @@
 /*!
  * - ファイル: snapshot.rs
  * - 概要: ローカル NTFS の通常ファイルを読み取り、実体と metadata の snapshot を取得します
- * - バージョン: 01.00.00
+ * - バージョン: 01.00.01
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -21,6 +21,7 @@
  * ```text
  * VerNo.        author        update      comment
  * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
+ * Ver.01.00.01  Shunji Ogawa  2026/11/19  属性設定用 handle の実体と基本情報を再照合
  * ```
  *
  * 備考:
@@ -236,6 +237,30 @@ impl FileSnapshot {
 	//------------------------------------------------------------------------------
 	pub fn security_descriptor(&self) -> &[u8] {
 		&self.security_descriptor
+	}
+
+	//------------------------------------------------------------------------------
+	/**
+	 * 置換後に属性を調整する handle が、読取り検証済み実体を指すことを確認します
+	 *
+	 * # Errors
+	 *
+	 * 実体 ID、link 数、基本属性、作成・更新日時、長さの不一致または取得失敗
+	 */
+	//------------------------------------------------------------------------------
+	pub(crate) fn verify_attribute_handle(&self, file: &File) -> Result<(), FileSafetyError> {
+		let info = file_information(file)?;
+		let length = (u64::from(info.nFileSizeHigh) << 32) | u64::from(info.nFileSizeLow);
+		if file_identity(file)? != self.identity
+			|| info.nNumberOfLinks != 1
+			|| info.dwFileAttributes != self.attributes
+			|| filetime(info.ftCreationTime) != self.creation_time
+			|| filetime(info.ftLastWriteTime) != self.last_write_time
+			|| length != self.length
+		{
+			return Err(FileSafetyError::Changed);
+		}
+		Ok(())
 	}
 
 	//------------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 /*!
  * - ファイル: lib.rs
  * - 概要: Windows 境界の crate と対象ビルドの確認入口を提供します
- * - バージョン: 01.00.00
+ * - バージョン: 01.03.01
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -21,6 +21,10 @@
  * ```text
  * VerNo.        author        update      comment
  * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
+ * Ver.01.01.00  Shunji Ogawa  2026/11/19  Java 実行時情報を公開
+ * Ver.01.02.00  Shunji Ogawa  2026/11/19  Java 助言一覧の HTTPS 取得を公開
+ * Ver.01.03.00  Shunji Ogawa  2026/11/19  Java の公式勧告を直接取得する API に変更
+ * Ver.01.03.01  Shunji Ogawa  2026/11/19  定義キャッシュの権限判定を公開
  * ```
  *
  * 備考:
@@ -46,6 +50,8 @@ mod ui_fonts;
 pub use ui_fonts::windows_fonts_directory;
 
 #[cfg(windows)]
+mod advisory_http;
+#[cfg(windows)]
 mod java;
 #[cfg(windows)]
 mod process;
@@ -61,7 +67,9 @@ mod transaction_data;
 mod transaction_io;
 
 #[cfg(windows)]
-pub use java::{JavaEnvironment, JavaError, JavaImageKind, select_java};
+pub use advisory_http::{can_use_advisory_cache, fetch_official_advisory};
+#[cfg(windows)]
+pub use java::{JavaEnvironment, JavaError, JavaImageKind, JavaRuntime, select_java};
 #[cfg(windows)]
 pub use process::{Cancellation, PROCESS_TIMEOUT, ProcessError, StorePassword};
 #[cfg(windows)]

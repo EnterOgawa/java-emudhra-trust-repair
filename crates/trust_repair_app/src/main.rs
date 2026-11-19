@@ -1,8 +1,8 @@
 //------------------------------------------------------------------------------
 /*!
  * - ファイル: main.rs
- * - 概要: 日英の native 画面から診断・適用・復元・未完了復旧を提供します
- * - バージョン: 01.01.00
+ * - 概要: 日英の native 画面で Java の勧告と証明書の状態を確認します
+ * - バージョン: 01.04.01
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -22,6 +22,12 @@
  * VerNo.        author        update      comment
  * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
  * Ver.01.01.00  Shunji Ogawa  2026/10/27  CLI から Cargo と一致する製品版数を確認可能にする
+ * Ver.01.02.00  Shunji Ogawa  2026/11/19  選択した Java の CVE と対処方法を表示
+ * Ver.01.03.00  Shunji Ogawa  2026/11/19  選択中の CVE 詳細を現在の照合結果と同期
+ * Ver.01.03.01  Shunji Ogawa  2026/11/19  起動時のメインウィンドウの高さを拡大
+ * Ver.01.03.02  Shunji Ogawa  2026/11/19  CVE の 5 列表示に合わせて起動時の横幅を拡大
+ * Ver.01.04.00  Shunji Ogawa  2026/11/19  起動時に定義を更新し、選択中の Java を再照合
+ * Ver.01.04.01  Shunji Ogawa  2026/11/19  起動時の公式勧告取込を接続
  * ```
  *
  * 備考:
@@ -32,7 +38,13 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod advisory;
+mod advisory_file;
+mod advisory_update;
+mod advisory_view;
 mod language;
+mod openjdk_advisory;
+mod oracle_advisory;
 #[cfg(feature = "gui-qa")]
 mod qa;
 #[cfg(test)]
@@ -40,6 +52,7 @@ mod tests;
 mod ui_style;
 mod worker;
 
+use advisory_update::StartupUpdate;
 use eframe::egui::{self, Color32, RichText};
 use language::Language;
 use std::path::PathBuf;
@@ -245,6 +258,12 @@ struct TrustRepairApp {
 	custom: Vec<StoreInput>,
 	/// 結果の詳細。主操作に診断手順を要求しません
 	diagnosis: Option<Box<Diagnosis>>,
+	/// 現在の入力世代で取得した Java の勧告照合結果
+	advisories: Option<advisory_file::AdvisoryResult>,
+	/// 起動時だけ確認する勧告定義の更新状態
+	advisory_update: StartupUpdate,
+	/// 詳細を表示している CVE の、並べ替え前の行番号
+	selected_cve: Option<usize>,
 	/// 詳細内で表示する検査済み履歴
 	history: Vec<HistoryEntry>,
 	/// 未完了があり復元を優先するか
@@ -314,6 +333,9 @@ impl TrustRepairApp {
 			builtin: [standard(), standard()],
 			custom: Vec::new(),
 			diagnosis: None,
+			advisories: None,
+			advisory_update: StartupUpdate::Idle,
+			selected_cve: None,
 			history: Vec::new(),
 			needs_recovery: false,
 			confirmation: None,
@@ -425,6 +447,8 @@ impl TrustRepairApp {
 		self.input_generation = self.input_generation.wrapping_add(1);
 		self.current_status = CurrentStatus::Unknown;
 		self.diagnosis = None;
+		self.advisories = None;
+		self.selected_cve = None;
 		// 空入力には確認を予約せず、入力がある場合だけ新しい期限を作る
 		self.auto_due = if self.root_text.trim().is_empty() {
 			None
@@ -505,24 +529,19 @@ impl TrustRepairApp {
 		}
 		self.auto_due = None;
 		let generation = self.input_generation;
-		// 一時認証の検証に合格した場合だけ worker へ渡し、失敗は同じ世代の結果にする
-		match self.snapshot_credentials() {
-			Ok(credentials) => {
-				self.launch(
-					Command::Scan {
-						root: self.selected_root(),
-						credentials,
-					},
-					context,
-				);
-				// 実際に worker が起動した場合だけ、自動確認の世代と確認中表示を保持する
-				if self.worker.is_some() {
-					self.automatic_generation = Some(generation);
-					self.current_status = CurrentStatus::Checking;
-					context.request_repaint();
-				}
-			}
-			Err(value) => self.accept_auto_check(generation, Err(Failure::Process(value))),
+		// 認証入力を作れない場合でも、同じ worker で Java の版数までは確認する
+		self.launch(
+			Command::Scan {
+				root: self.selected_root(),
+				credentials: self.snapshot_credentials(),
+			},
+			context,
+		);
+		// 実際に worker が起動した場合だけ、自動確認の世代と確認中表示を保持する
+		if self.worker.is_some() {
+			self.automatic_generation = Some(generation);
+			self.current_status = CurrentStatus::Checking;
+			context.request_repaint();
 		}
 	}
 
@@ -671,6 +690,11 @@ impl TrustRepairApp {
 			self.auto_due = None;
 			self.current_status = CurrentStatus::Unknown;
 		}
+		// 版数を確認し直す操作では以前の勧告を現在の結果として表示しない
+		if matches!(&command, Command::Scan { .. } | Command::Deactivate { .. }) {
+			self.advisories = None;
+			self.selected_cve = None;
+		}
 		self.message.clear();
 		self.error_details.clear();
 		self.error = false;
@@ -752,6 +776,17 @@ impl TrustRepairApp {
 		loop {
 			// 工程・中断可否・Done を同じ順序で反映し、実行中の通知を待たない
 			match receiver.try_recv() {
+				Ok(Event::Advisories(mut result)) => {
+					// 古い自動確認の途中通知は現在のフォルダの結果へ混ぜない
+					if self
+						.automatic_generation
+						.is_none_or(|generation| generation == self.input_generation)
+					{
+						self.advisory_update.apply_to(&mut result);
+						self.advisories = Some(result);
+						self.selected_cve = None;
+					}
+				}
 				Ok(Event::Scan(value)) => {
 					self.progress = self.language.simple_scan_phase(value.phase).to_owned();
 					self.cancellable = true;
@@ -1164,17 +1199,14 @@ impl TrustRepairApp {
 					)
 					.clicked()
 					{
-						// 認証の不正はその場で表示し、診断を自動再試行しない
-						match self.take_credentials() {
-							Ok(credentials) => self.launch(
-								Command::Scan {
-									root: self.selected_root(),
-									credentials,
-								},
-								ui.ctx(),
-							),
-							Err(value) => self.accept(Err(Failure::Process(value))),
-						}
+						let credentials = self.take_credentials();
+						self.launch(
+							Command::Scan {
+								root: self.selected_root(),
+								credentials,
+							},
+							ui.ctx(),
+						);
 					}
 					// 入力先がある場合だけ、その Java に対応する履歴を再取得する
 					if ui_style::button(
@@ -1635,6 +1667,12 @@ impl eframe::App for TrustRepairApp {
 	//------------------------------------------------------------------------------
 	fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
 		self.poll();
+		if self.advisory_update.poll(ui.ctx())
+			&& let Some(result) = &mut self.advisories
+			&& self.advisory_update.apply_to(result)
+		{
+			self.selected_cve = None;
+		}
 		self.handle_close(ui.ctx());
 		let language = self.language;
 		egui::CentralPanel::default()
@@ -1798,6 +1836,17 @@ impl eframe::App for TrustRepairApp {
 						));
 						ui.add_space(6.0);
 						ui.separator();
+						// 選択 Java の勧告は証明書処理や詳細設定と別に確認できるようにする
+						if !self.root_text.trim().is_empty() {
+							advisory_view::draw(
+								ui,
+								language,
+								self.advisories.as_ref(),
+								&self.advisory_update,
+								self.current_status == CurrentStatus::Unavailable,
+								&mut self.selected_cve,
+							);
+						}
 						ui.add_enabled_ui(self.worker.is_none() && !self.closing, |ui| {
 							self.draw_results(ui);
 							self.draw_environment_settings(ui);
@@ -1932,7 +1981,7 @@ fn run(language: Language) -> Result<(), String> {
 	let native = eframe::NativeOptions {
 		viewport: egui::ViewportBuilder::default()
 			.with_icon(icon)
-			.with_inner_size([720.0, 400.0])
+			.with_inner_size([940.0, 560.0])
 			.with_min_inner_size([640.0, 360.0]),
 		..Default::default()
 	};
@@ -1946,6 +1995,14 @@ fn run(language: Language) -> Result<(), String> {
 			let app = TrustRepairApp::new(policy, language, options);
 			#[cfg(feature = "gui-qa")]
 			let app = qa::configure(app, preview, font_source)?;
+			let mut app = app;
+			#[cfg(feature = "gui-qa")]
+			let normal_startup = app.qa.is_none();
+			#[cfg(not(feature = "gui-qa"))]
+			let normal_startup = true;
+			if normal_startup {
+				app.advisory_update = StartupUpdate::start(&context.egui_ctx);
+			}
 			Ok(Box::new(app))
 		}),
 	)

@@ -2,7 +2,7 @@
 /*!
  * - ファイル: transaction_io.rs
  * - 概要: transaction の Windows 排他、限定 ACL、metadata 検査と置換を包みます
- * - バージョン: 01.00.00
+ * - バージョン: 01.00.01
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -21,6 +21,7 @@
  * ```text
  * VerNo.        author        update      comment
  * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
+ * Ver.01.00.01  Shunji Ogawa  2026/11/19  実体を再照合した handle で置換後の属性を補正
  * ```
  *
  * 備考:
@@ -35,7 +36,7 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::os::windows::ffi::OsStrExt;
-use std::os::windows::fs::OpenOptionsExt;
+use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 
@@ -57,9 +58,10 @@ use windows_sys::Win32::Security::{
 };
 use windows_sys::Win32::Storage::FileSystem::{
 	BACKUP_DATA, BACKUP_SECURITY_DATA, BackupRead, BackupSeek, CREATE_NEW, CreateDirectoryW,
-	CreateFileW, DELETE, FILE_ATTRIBUTE_NORMAL, FILE_FLAG_BACKUP_SEMANTICS,
-	FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, MoveFileW,
-	READ_CONTROL, ReplaceFileW, SetFileAttributesW, SetFileTime, WRITE_DAC, WRITE_OWNER,
+	CreateFileW, DELETE, FILE_ATTRIBUTE_NORMAL, FILE_BASIC_INFO, FILE_FLAG_BACKUP_SEMANTICS,
+	FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
+	FILE_SHARE_WRITE, FILE_WRITE_ATTRIBUTES, FileBasicInfo, MoveFileW, READ_CONTROL, ReplaceFileW,
+	SetFileAttributesW, SetFileInformationByHandle, SetFileTime, WRITE_DAC, WRITE_OWNER,
 };
 use windows_sys::Win32::System::Threading::{
 	CreateMutexW, GetCurrentProcess, GetCurrentThread, OpenProcessToken, OpenThreadToken,
@@ -978,6 +980,51 @@ pub(crate) fn preserve_dacl(path: &Path, original: &FileSnapshot) -> Result<(), 
 		return Err(last());
 	}
 	file.sync_all()?;
+	Ok(())
+}
+
+//------------------------------------------------------------------------------
+/**
+ * 置換後の実体を handle で再照合し、保存したファイル属性だけを設定します
+ *
+ * # Errors
+ *
+ * path・実体の不一致、属性専用 handle の取得、属性の設定・読戻しの失敗
+ */
+//------------------------------------------------------------------------------
+pub(crate) fn restore_attributes(
+	path: &Path,
+	actual: &FileSnapshot,
+	attributes: u32,
+) -> Result<(), IoFailure> {
+	check_path(path).map_err(file_failure)?;
+	let file = OpenOptions::new()
+		.access_mode(FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES)
+		.share_mode(FILE_SHARE_READ)
+		.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+		.open(path)?;
+	actual
+		.verify_attribute_handle(&file)
+		.map_err(file_failure)?;
+	let information = FILE_BASIC_INFO {
+		FileAttributes: attributes,
+		..Default::default()
+	};
+	// SAFETY: 再照合した同じ handle へ、日時を変更しない基本情報だけを設定する
+	if unsafe {
+		SetFileInformationByHandle(
+			file.as_raw_handle(),
+			FileBasicInfo,
+			std::ptr::from_ref(&information).cast(),
+			size_of::<FILE_BASIC_INFO>() as u32,
+		)
+	} == 0
+	{
+		return Err(last());
+	}
+	if file.metadata()?.file_attributes() != attributes {
+		return Err(unsupported());
+	}
 	Ok(())
 }
 

@@ -2,7 +2,7 @@
 /*!
  * - ファイル: tests.rs
  * - 概要: GUI の言語境界、秘密の非保存、未完了優先とキーボード入力を検証します
- * - バージョン: 01.00.00
+ * - バージョン: 01.03.02
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -21,11 +21,21 @@
  * ```text
  * VerNo.        author        update      comment
  * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
+ * Ver.01.01.00  Shunji Ogawa  2026/11/19  勧告通知の入力世代、診断失敗時の保持、定義更新を検証
+ * Ver.01.01.01  Shunji Ogawa  2026/11/19  定義の差し替え前後で公式配布先を照合
+ * Ver.01.02.00  Shunji Ogawa  2026/11/19  表の行をクリックしたときの CVE 詳細を検証
+ * Ver.01.02.01  Shunji Ogawa  2026/11/19  最小ウィンドウでの詳細の横幅と日本語リンクを検証
+ * Ver.01.02.02  Shunji Ogawa  2026/11/19  対応不要の CVE を除いた表と空表示を検証
+ * Ver.01.02.03  Shunji Ogawa  2026/11/19  CVSS と修正版の並べ替えと選択行を検証
+ * Ver.01.02.04  Shunji Ogawa  2026/11/19  初期表示が CVSS の降順であることを検証
+ * Ver.01.03.00  Shunji Ogawa  2026/11/19  取得済み定義で選択中の Java を再照合する処理を検証
+ * Ver.01.03.01  Shunji Ogawa  2026/11/19  配布元ごとの確認結果を含む通知形式に対応
+ * Ver.01.03.02  Shunji Ogawa  2026/11/19  メモリ内の定義での再照合を検証
  * ```
  *
  * 備考:
  *
- * ファイル・Java を変更しない試験です。native の実測は別の明示 QA で行います
+ * 明示した隔離試験では試験 EXE の隣に定義を書きます。Java は変更しません
  */
 //------------------------------------------------------------------------------
 
@@ -83,6 +93,401 @@ fn await_worker_finished(worker: &Worker) {
 		assert!(Instant::now() < deadline, "controlled worker must finish");
 		thread::yield_now();
 	}
+}
+
+//------------------------------------------------------------------------------
+/**
+ * ストア診断が失敗しても現在の勧告を残し、旧フォルダの通知は表示しないことを検証します
+ */
+//------------------------------------------------------------------------------
+#[test]
+fn poll_keeps_advisories_only_for_the_current_selection() {
+	// 同じ通知順で、入力世代が一致する場合だけ勧告が画面へ届くことを検証する
+	for (generation, expected) in [(5, true), (4, false)] {
+		let mut app = app(Language::Japanese);
+		app.input_generation = 5;
+		app.automatic_generation = Some(generation);
+		let report = advisory::Report {
+			vendor: "Test vendor".to_owned(),
+			version: "21.0.1+2".to_owned(),
+			product: None,
+			download_page: None,
+			status: advisory::Status::Unsupported,
+			findings: Vec::new(),
+			catalog_date: advisory::CATALOG_DATE.to_owned(),
+		};
+		finish_after_initial_drain(
+			&mut app,
+			vec![
+				Event::Advisories(advisory_file::AdvisoryResult {
+					report,
+					source: advisory_file::Source::Embedded,
+					selection: None,
+					read_started_at: Instant::now(),
+				}),
+				Event::Done(Err(Failure::Process(
+					trust_repair_windows::ProcessError::InvalidPassword,
+				))),
+			],
+			false,
+		);
+		app.poll();
+		assert_eq!(app.advisories.is_some(), expected);
+		app.selected_cve = Some(1);
+		app.schedule_check(Duration::ZERO);
+		assert!(app.advisories.is_none());
+		assert!(app.selected_cve.is_none());
+	}
+}
+
+//------------------------------------------------------------------------------
+/**
+ * 対応不要の項目を除いて表示し、クリックした行に対応する詳細を開くことを検証します
+ */
+//------------------------------------------------------------------------------
+#[test]
+fn opens_clicked_cve_details_from_table() {
+	let findings = (1000..1083).map(|number| advisory::Finding {
+		cve: format!("CVE-2026-{number}"),
+		cvss: match number {
+			1001 => Some(39),
+			1003 => Some(70),
+			1005 => Some(91),
+			1006 => Some(40),
+			_ => None,
+		}
+		.map(|tenths| advisory::Cvss {
+			version: "3.1",
+			tenths,
+		}),
+		summary: advisory::Localized {
+			ja: format!("概要 {number}"),
+			en: format!("Summary {number}"),
+		},
+		condition: advisory::Localized {
+			ja: format!("影響条件 {number}"),
+			en: format!("Conditions {number}"),
+		},
+		details_url: "https://openjdk.org/groups/vulnerability/advisories/2026-11-17".to_owned(),
+		status: match number {
+			1000 => advisory::Status::Fixed,
+			1002 => advisory::Status::NotAffected,
+			1003 => advisory::Status::PotentiallyAffected,
+			1004 => advisory::Status::UnknownVersion,
+			_ => advisory::Status::AffectedVersion,
+		},
+		guidance: Some(advisory::Guidance {
+			fixed_build: match number {
+				1001 => Some("21.0.9+10"),
+				1003 => Some("21.0.11+10"),
+				1004 => None,
+				_ => Some("21.0.13.1+2"),
+			}
+			.map(str::to_owned),
+			updates_url: "https://github.com/adoptium/temurin/issues/326".to_owned(),
+			workaround: None,
+		}),
+	});
+	let mut result = advisory_file::AdvisoryResult {
+		source: advisory_file::Source::Embedded,
+		selection: None,
+		read_started_at: Instant::now(),
+		report: advisory::Report {
+			vendor: "Eclipse Adoptium".to_owned(),
+			version: "21.0.6+7".to_owned(),
+			product: Some(advisory::Product::Temurin),
+			download_page: Some("https://adoptium.net/temurin/releases/".to_owned()),
+			status: advisory::Status::AffectedVersion,
+			findings: findings.collect(),
+			catalog_date: advisory::CATALOG_DATE.to_owned(),
+		},
+	};
+	let context = egui::Context::default();
+	ui_style::configure(&context);
+	let draw = |result: &advisory_file::AdvisoryResult, selected: &mut Option<usize>, events| {
+		let mut output = context.run_ui(
+			egui::RawInput {
+				screen_rect: Some(egui::Rect::from_min_size(
+					egui::Pos2::ZERO,
+					egui::vec2(640.0, 360.0),
+				)),
+				events,
+				..Default::default()
+			},
+			|ui| {
+				advisory_view::draw(
+					ui,
+					Language::Japanese,
+					Some(result),
+					&StartupUpdate::Idle,
+					false,
+					selected,
+				)
+			},
+		);
+		output.textures_delta.clear();
+		output
+	};
+	let text_position = |output: &egui::FullOutput, label: &str| {
+		output.shapes.iter().find_map(|shape| {
+			if let egui::epaint::Shape::Text(text) = &shape.shape
+				&& text.galley.text() == label
+				&& text.galley.rows.len() == 1
+				&& shape.clip_rect.contains(text.pos + egui::vec2(2.0, 6.0))
+			{
+				Some(text.pos + egui::vec2(2.0, 6.0))
+			} else {
+				None
+			}
+		})
+	};
+	let click = |result: &advisory_file::AdvisoryResult, selected: &mut Option<usize>, pos| {
+		for pressed in [true, false] {
+			draw(
+				result,
+				selected,
+				vec![
+					egui::Event::PointerMoved(pos),
+					egui::Event::PointerButton {
+						pos,
+						button: egui::PointerButton::Primary,
+						pressed,
+						modifiers: egui::Modifiers::NONE,
+					},
+				],
+			);
+		}
+		draw(result, selected, vec![])
+	};
+	let mut selected = None;
+	let initial = draw(&result, &mut selected, vec![]);
+	assert!(text_position(&initial, "修正版").is_some());
+	assert!(text_position(&initial, "CVSS 深刻度 ↓").is_some());
+	let critical = text_position(&initial, "緊急 9.1").expect("critical score is visible");
+	let high = text_position(&initial, "高 7.0").expect("high score is visible");
+	let medium = text_position(&initial, "中 4.0").expect("medium score is visible");
+	let low = text_position(&initial, "低 3.9").expect("low score is visible");
+	let unscored = text_position(&initial, "CVE-2026-1004").expect("unscored CVE follows scores");
+	assert!(critical.y < high.y && high.y < medium.y && medium.y < low.y && low.y < unscored.y);
+	assert!(text_position(&initial, "表示 81 件（対象バージョン 79 件、要確認 2 件）").is_some());
+	assert!(text_position(&initial, "CVE-2026-1000").is_none());
+	assert!(text_position(&initial, "CVE-2026-1002").is_none());
+	assert!(text_position(&initial, "CVE-2026-1003").is_some());
+	assert!(text_position(&initial, "CVE-2026-1004").is_some());
+	assert!(text_position(&initial, "影響条件 1001").is_none());
+	let pos = text_position(&initial, "概要 1001").expect("affected CVE is visible");
+	let detail = click(&result, &mut selected, pos);
+	assert_eq!(selected, Some(1));
+	let condition =
+		text_position(&detail, "影響条件 1001").expect("selected conditions are visible");
+	assert!(text_position(&detail, "影響条件 1000").is_none());
+	assert!(text_position(&detail, "公式勧告").is_some());
+	let updates = text_position(&detail, "更新情報").expect("update link fits on one line");
+	let download = text_position(&detail, "ダウンロード").expect("download link fits on one line");
+	assert_eq!(updates.y, download.y);
+	let close = text_position(&detail, "閉じる").expect("close button is visible");
+	assert!(
+		close.x - condition.x > 530.0,
+		"dialog uses the available width"
+	);
+	let escape = [true, false].map(|pressed| egui::Event::Key {
+		key: egui::Key::Escape,
+		physical_key: None,
+		pressed,
+		repeat: false,
+		modifiers: egui::Modifiers::NONE,
+	});
+	draw(&result, &mut selected, escape.to_vec());
+	assert!(selected.is_none());
+	assert!(text_position(&initial, "CVE-2026-1082").is_none());
+	draw(
+		&result,
+		&mut selected,
+		vec![egui::Event::MouseWheel {
+			unit: egui::MouseWheelUnit::Point,
+			delta: egui::vec2(0.0, -3000.0),
+			phase: egui::TouchPhase::Move,
+			source: egui::MouseWheelSource::Unknown,
+			modifiers: egui::Modifiers::NONE,
+		}],
+	);
+	let last = (0..20)
+		.find_map(|_| {
+			let output = draw(&result, &mut selected, vec![]);
+			text_position(&output, "CVE-2026-1082").map(|_| output)
+		})
+		.expect("last CVE is reachable by scrolling");
+	assert_eq!(
+		text_position(&last, "修正版"),
+		text_position(&initial, "修正版")
+	);
+	let cvss_header = text_position(&last, "CVSS 深刻度 ↓").expect("CVSS header is visible");
+	let ascending = click(&result, &mut selected, cvss_header);
+	assert!(text_position(&ascending, "CVSS 深刻度 ↑").is_some());
+	assert!(
+		text_position(&ascending, "低 3.9").unwrap().y
+			< text_position(&ascending, "緊急 9.1").unwrap().y
+	);
+	assert!(
+		text_position(&ascending, "緊急 9.1").unwrap().y
+			< text_position(&ascending, "CVE-2026-1004").unwrap().y
+	);
+	let descending = click(&result, &mut selected, cvss_header);
+	assert!(text_position(&descending, "CVSS 深刻度 ↓").is_some());
+	assert_eq!(text_position(&descending, "緊急 9.1"), Some(critical));
+	let detail = click(&result, &mut selected, critical);
+	assert_eq!(selected, Some(5));
+	assert!(text_position(&detail, "CVSS 3.1  緊急 9.1").is_some());
+	draw(&result, &mut selected, escape.into());
+	assert!(selected.is_none());
+	let reopened_table = draw(&result, &mut selected, vec![]);
+	let fixed_header =
+		text_position(&reopened_table, "修正版").expect("fixed-build header is visible");
+	let by_build = click(&result, &mut selected, fixed_header);
+	assert!(text_position(&by_build, "修正版 ↑").is_some());
+	assert!(
+		text_position(&by_build, "21.0.9+10").unwrap().y
+			< text_position(&by_build, "21.0.11+10").unwrap().y
+	);
+	let mut sorted = by_build;
+	for (header, sorted_header) in [("CVE", "CVE ↑"), ("概要", "概要 ↑"), ("判定", "判定 ↓")]
+	{
+		let position = text_position(&sorted, header).expect("sortable header is visible");
+		sorted = click(&result, &mut selected, position);
+		assert!(text_position(&sorted, sorted_header).is_some());
+	}
+	result.report.status = advisory::Status::Fixed;
+	result.report.findings.retain(|finding| {
+		matches!(
+			finding.status,
+			advisory::Status::Fixed | advisory::Status::NotAffected
+		)
+	});
+	let empty = draw(&result, &mut selected, vec![]);
+	assert!(
+		text_position(
+			&empty,
+			"収録済みの勧告に、対応または確認が必要な項目はありません。"
+		)
+		.is_some()
+	);
+	assert!(text_position(&empty, "CVE").is_none());
+}
+
+//------------------------------------------------------------------------------
+/**
+ * 隔離済みの実 Java と GUI の worker を使い、定義差し替え後の再照合を検証します
+ *
+ * # Notes
+ *
+ * 実行する試験 EXE は専用の空フォルダへコピーします。合成 CVE は試験定義だけに記載します
+ */
+//------------------------------------------------------------------------------
+#[test]
+#[ignore = "試験EXEをartifacts/java-advisories-previewの空フォルダへコピーして実行"]
+fn reads_updated_catalog_on_the_next_java_selection() {
+	let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+		.join("../..")
+		.canonicalize()
+		.expect("workspace");
+	let qa_root = workspace
+		.join("artifacts/java-advisories-preview")
+		.canonicalize()
+		.expect("isolated QA area");
+	let exe = std::env::current_exe().expect("test executable");
+	assert!(
+		exe.canonicalize()
+			.expect("test executable path")
+			.starts_with(qa_root)
+	);
+	let definition = exe.with_file_name(advisory_file::FILE_NAME);
+	assert!(!definition.exists(), "empty folder for this test");
+	let fixture = workspace.join("artifacts/diagnostics/integration/Java 21 読取 診断");
+	assert!(
+		fixture.join("bin/java.exe").is_file(),
+		"isolated Temurin fixture"
+	);
+
+	let mut app = app(Language::Japanese);
+	app.root_text = fixture.display().to_string();
+	app.builtin[0].standard = false;
+	let context = egui::Context::default();
+	let read = |app: &mut TrustRepairApp| {
+		app.schedule_check(Duration::ZERO);
+		app.pump_auto_check(&context);
+		let deadline = Instant::now() + Duration::from_secs(20);
+		// 子の終了は本番と同じ poll に任せ、試験の異常時も所有 worker を回収する
+		while app.worker.is_some() && Instant::now() < deadline {
+			app.poll();
+			thread::sleep(Duration::from_millis(10));
+		}
+		// 実行が終わらない場合は、試験の中断要求で所有する子だけを終了させる
+		if let Some(worker) = app.worker.take() {
+			worker.cancellation.cancel();
+			worker.handle.join().expect("cancelled worker returns");
+			panic!("advisory worker did not finish");
+		}
+		assert!(matches!(app.current_status, CurrentStatus::Unavailable));
+	};
+	read(&mut app);
+	let initial = app
+		.advisories
+		.as_ref()
+		.expect("version despite invalid store credentials");
+	assert_eq!(initial.source, advisory_file::Source::Embedded);
+	assert_eq!(initial.report.findings[0].cve, "CVE-2026-114938");
+	assert!(
+		initial.report.version.contains('+'),
+		"verified runtime build"
+	);
+	let download_page =
+		"https://adoptium.net/temurin/releases/?arch=x64&mode=filter&os=windows&version=21";
+	assert_eq!(initial.report.download_page.as_deref(), Some(download_page));
+
+	let catalog = include_str!("../../../data/java-advisories.json")
+		.replace(advisory::CATALOG_DATE, "2026-11-20")
+		.replace("CVE-2026-114938", "CVE-2099-0001");
+	let (sender, receiver) = mpsc::channel();
+	let prefetched = advisory::Catalog::from_json(&catalog).expect("validated startup download");
+	sender
+		.send(Ok(((prefetched, false), Some(Instant::now()))))
+		.unwrap();
+	let mut update = StartupUpdate::Checking(receiver);
+	assert!(update.poll(&context));
+	let selected = app.advisories.as_mut().expect("already selected Java");
+	assert!(update.apply_to(selected));
+	assert_eq!(selected.source, advisory_file::Source::Downloaded);
+	assert_eq!(selected.report.findings[0].cve, "CVE-2099-0001");
+	assert_eq!(
+		selected.report.download_page.as_deref(),
+		Some(download_page)
+	);
+	let memory_only = StartupUpdate::Ready {
+		catalog: advisory::Catalog::from_json(&catalog).unwrap(),
+		stored_at: None,
+		incomplete: false,
+	};
+	read(&mut app);
+	let selected = app
+		.advisories
+		.as_mut()
+		.expect("version selected after startup");
+	assert!(!update.apply_to(selected));
+	assert!(memory_only.apply_to(selected));
+	assert_eq!(selected.report.findings[0].cve, "CVE-2099-0001");
+	std::fs::write(&definition, catalog).expect("isolated revised catalog");
+	read(&mut app);
+	let updated = app.advisories.as_ref().expect("reloaded result");
+	assert_eq!(updated.source, advisory_file::Source::External);
+	assert_eq!(updated.report.catalog_date, "2026-11-20");
+	assert_eq!(updated.report.findings[0].cve, "CVE-2099-0001");
+	assert_eq!(updated.report.download_page.as_deref(), Some(download_page));
+
+	std::fs::write(&definition, b"{invalid json").expect("isolated malformed catalog");
+	read(&mut app);
+	let fallback = app.advisories.as_ref().expect("fallback result");
+	assert_eq!(fallback.source, advisory_file::Source::Fallback);
+	assert_eq!(fallback.report.findings[0].cve, "CVE-2026-114938");
 }
 
 //------------------------------------------------------------------------------

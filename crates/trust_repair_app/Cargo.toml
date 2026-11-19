@@ -16,6 +16,11 @@ trust_repair_core.workspace = true
 trust_repair_windows.workspace = true
 eframe.workspace = true
 rfd.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+quick-xml = "=0.41.0"
+scraper = { version = "=0.29.0", default-features = false }
+tempfile = "=3.27.0"
 zeroize.workspace = true
 # eguiと同じ既存parserでTTC内のMS Gothicのface名を照合する
 skrifa = "=0.44.0"

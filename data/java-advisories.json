@@ -1,0 +1,1922 @@
+{
+  "schema_version": 1,
+  "verified_on": "2026-11-19",
+  "advisories": [
+    {
+      "product": "oracle_java_se",
+      "details_url": "https://www.oracle.com/security-alerts/cspunov2026.html#AppendixJAVA",
+      "updates_url": "https://docs.oracle.com/en-us/iaas/releasenotes/java-management/jdk-cspu-november-2026.htm",
+      "series": [
+        {
+          "major": 11,
+          "listed_release": "11.0.33.0.3",
+          "fixed_build": "11.0.33.1+4"
+        },
+        {
+          "major": 17,
+          "listed_release": "17.0.21.0.3",
+          "fixed_build": "17.0.21.1+4"
+        },
+        {
+          "major": 21,
+          "listed_release": "21.0.13.0.3",
+          "fixed_build": "21.0.13.1+4"
+        },
+        {
+          "major": 25,
+          "listed_release": "25.0.5.0.3",
+          "fixed_build": "25.0.5.1+4"
+        }
+      ],
+      "findings": [
+        {
+          "cve": "CVE-2026-114938",
+          "cvss": {
+            "version": "3.1",
+            "score": 8.1
+          },
+          "summary": {
+            "ja": "コンパイラのメモリ破損により、任意のコードが実行されるおそれがあります。",
+            "en": "Memory corruption in the compiler could allow arbitrary code execution."
+          },
+          "condition": {
+            "ja": "Web サービスなど、信頼していない Java Web Start アプリやアプレットを介さず当該 API にデータが渡る場合に影響します。x64 CPU が AVX-512 VBMI に対応し、影響を受ける Base64 最適化が有効であることが条件です。",
+            "en": "Applies when data reaches the affected APIs, for example through a web service, outside untrusted Java Web Start applications and applets. Requires an x64 CPU with AVX-512 VBMI and the affected Base64 optimization enabled."
+          },
+          "majors": [
+            17,
+            21,
+            25
+          ]
+        },
+        {
+          "cve": "CVE-2026-114939",
+          "cvss": {
+            "version": "3.1",
+            "score": 7.4
+          },
+          "summary": {
+            "ja": "JGSS で機密性と完全性が損なわれるおそれがあります。",
+            "en": "A JGSS issue could compromise confidentiality and integrity."
+          },
+          "condition": {
+            "ja": "Java サンドボックスに依存し、信頼していないコードを読み込んで実行する構成に影響します。",
+            "en": "Applies to deployments that run untrusted code and rely on the Java sandbox."
+          },
+          "majors": [
+            11,
+            17,
+            21,
+            25
+          ]
+        },
+        {
+          "cve": "CVE-2026-114940",
+          "cvss": {
+            "version": "3.1",
+            "score": 7.4
+          },
+          "summary": {
+            "ja": "JSSE の TLS 処理で機密性と完全性が損なわれるおそれがあります。",
+            "en": "A TLS issue in JSSE could compromise confidentiality and integrity."
+          },
+          "condition": {
+            "ja": "当該 API にデータが渡る場合や、Java サンドボックスに依存して信頼していないコードを実行する構成に影響します。",
+            "en": "Applies when data reaches the affected APIs or when a deployment runs untrusted code and relies on the Java sandbox."
+          },
+          "majors": [
+            11,
+            17,
+            21,
+            25
+          ]
+        },
+        {
+          "cve": "CVE-2026-114941",
+          "cvss": {
+            "version": "3.1",
+            "score": 7
+          },
+          "summary": {
+            "ja": "コンパイラで情報の漏えい、改変、サービス停止が起こるおそれがあります。",
+            "en": "A compiler issue could cause data exposure, data modification, or denial of service."
+          },
+          "condition": {
+            "ja": "Web サービスなど、信頼していない Java Web Start アプリやアプレットを介さず当該 API にデータが渡る場合に影響します。",
+            "en": "Applies when data reaches the affected APIs, for example through a web service, outside untrusted Java Web Start applications and applets."
+          },
+          "majors": [
+            21,
+            25
+          ]
+        },
+        {
+          "cve": "CVE-2026-114942",
+          "cvss": {
+            "version": "3.1",
+            "score": 7
+          },
+          "summary": {
+            "ja": "Java ライブラリで情報の漏えい、改変、サービス停止が起こるおそれがあります。",
+            "en": "A Java library issue could cause data exposure, data modification, or denial of service."
+          },
+          "condition": {
+            "ja": "Web サービスなど、信頼していない Java Web Start アプリやアプレットを介さず当該 API にデータが渡る場合に影響します。",
+            "en": "Applies when data reaches the affected APIs, for example through a web service, outside untrusted Java Web Start applications and applets."
+          },
+          "majors": [
+            21,
+            25
+          ]
+        },
+        {
+          "cve": "CVE-2026-114943",
+          "cvss": {
+            "version": "3.1",
+            "score": 6.5
+          },
+          "summary": {
+            "ja": "HotSpot で情報の改変やサービス停止が起こるおそれがあります。",
+            "en": "A HotSpot issue could cause data modification or denial of service."
+          },
+          "condition": {
+            "ja": "当該 API にデータが渡る場合や、Java サンドボックスに依存して信頼していないコードを実行する構成に影響します。",
+            "en": "Applies when data reaches the affected APIs or when a deployment runs untrusted code and relies on the Java sandbox."
+          },
+          "majors": [
+            11,
+            17,
+            21,
+            25
+          ]
+        },
+        {
+          "cve": "CVE-2026-114944",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.9
+          },
+          "summary": {
+            "ja": "Java コアライブラリで情報が改変されるおそれがあります。",
+            "en": "A core Java library issue could allow data modification."
+          },
+          "condition": {
+            "ja": "当該 API にデータが渡る場合や、Java サンドボックスに依存して信頼していないコードを実行する構成に影響します。",
+            "en": "Applies when data reaches the affected APIs or when a deployment runs untrusted code and relies on the Java sandbox."
+          },
+          "majors": [
+            11,
+            17,
+            21,
+            25
+          ]
+        },
+        {
+          "cve": "CVE-2026-114945",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "Java ライブラリで情報が改変されるおそれがあります。",
+            "en": "A Java library issue could allow data modification."
+          },
+          "condition": {
+            "ja": "当該 API にデータが渡る場合や、Java サンドボックスに依存して信頼していないコードを実行する構成に影響します。",
+            "en": "Applies when data reaches the affected APIs or when a deployment runs untrusted code and relies on the Java sandbox."
+          },
+          "majors": [
+            21,
+            25
+          ]
+        },
+        {
+          "cve": "CVE-2026-114946",
+          "cvss": {
+            "version": "3.1",
+            "score": 4.8
+          },
+          "summary": {
+            "ja": "コンパイラで情報の漏えいや改変が起こるおそれがあります。",
+            "en": "A compiler issue could allow data exposure or modification."
+          },
+          "condition": {
+            "ja": "当該 API にデータが渡る場合や、Java サンドボックスに依存して信頼していないコードを実行する構成に影響します。",
+            "en": "Applies when data reaches the affected APIs or when a deployment runs untrusted code and relies on the Java sandbox."
+          },
+          "majors": [
+            11,
+            17,
+            21,
+            25
+          ]
+        },
+        {
+          "cve": "CVE-2026-114947",
+          "cvss": {
+            "version": "3.1",
+            "score": 3.7
+          },
+          "summary": {
+            "ja": "JSSE の TLS 処理で情報が改変されるおそれがあります。",
+            "en": "A TLS issue in JSSE could allow data modification."
+          },
+          "condition": {
+            "ja": "Java サンドボックスに依存し、信頼していないコードを読み込んで実行する構成に影響します。",
+            "en": "Applies to deployments that run untrusted code and rely on the Java sandbox."
+          },
+          "majors": [
+            25
+          ]
+        }
+      ]
+    },
+    {
+      "product": "temurin",
+      "details_url": "https://adoptium.net/news/2026/11/temurin-november-2026-cspu-java4shell/",
+      "updates_url": "https://github.com/adoptium/temurin/issues/326",
+      "workaround": {
+        "ja": "すぐに更新できない場合は、対象アプリの Java 起動オプションに -XX:-UseBASE64Intrinsics を加えて再起動してください。",
+        "en": "If you cannot update immediately, add -XX:-UseBASE64Intrinsics to the affected application's Java startup options and restart it."
+      },
+      "series": [
+        {
+          "major": 11,
+          "not_affected": true
+        },
+        {
+          "major": 17,
+          "fixed_build": "17.0.21.1+2"
+        },
+        {
+          "major": 21,
+          "fixed_build": "21.0.13.1+2"
+        },
+        {
+          "major": 25,
+          "fixed_build": "25.0.5.1+2"
+        }
+      ],
+      "findings": [
+        {
+          "cve": "CVE-2026-114938",
+          "cvss": {
+            "version": "3.1",
+            "score": 8.1
+          },
+          "summary": {
+            "ja": "コンパイラのメモリ破損により、任意のコードが実行されるおそれがあります。",
+            "en": "Memory corruption in the compiler could allow arbitrary code execution."
+          },
+          "condition": {
+            "ja": "x64 CPU が AVX-512 VBMI に対応し、影響を受ける Base64 最適化が有効な構成で影響します。",
+            "en": "Requires an x64 CPU with AVX-512 VBMI and the affected Base64 optimization enabled."
+          },
+          "majors": [
+            11,
+            17,
+            21,
+            25
+          ]
+        }
+      ]
+    },
+    {
+      "product": "temurin",
+      "details_url": "https://openjdk.org/groups/vulnerability/advisories/2026-11-17",
+      "updates_url": "https://github.com/adoptium/temurin/issues/326",
+      "series": [
+        {
+          "major": 21,
+          "listed_release": "21.0.13.0.3",
+          "includes_earlier": true,
+          "fixed_build": "21.0.13.1+2"
+        }
+      ],
+      "findings": [
+        {
+          "cve": "CVE-2026-114939",
+          "cvss": {
+            "version": "3.1",
+            "score": 7.4
+          },
+          "summary": {
+            "ja": "JGSS で機密性と完全性が損なわれるおそれがあります。",
+            "en": "A JGSS issue could compromise confidentiality and integrity."
+          },
+          "condition": {
+            "ja": "Java サンドボックスに依存し、信頼していないコードを読み込んで実行する構成に影響します。",
+            "en": "Applies to deployments that run untrusted code and rely on the Java sandbox."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-114940",
+          "cvss": {
+            "version": "3.1",
+            "score": 7.4
+          },
+          "summary": {
+            "ja": "JSSE の TLS 処理で機密性と完全性が損なわれるおそれがあります。",
+            "en": "A TLS issue in JSSE could compromise confidentiality and integrity."
+          },
+          "condition": {
+            "ja": "当該 API にデータが渡る場合や、Java サンドボックスに依存して信頼していないコードを実行する構成に影響します。",
+            "en": "Applies when data reaches the affected APIs or when a deployment runs untrusted code and relies on the Java sandbox."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-114941",
+          "cvss": {
+            "version": "3.1",
+            "score": 7.0
+          },
+          "summary": {
+            "ja": "コンパイラで情報の漏えい、改変、サービス停止が起こるおそれがあります。",
+            "en": "A compiler issue could cause data exposure, data modification, or denial of service."
+          },
+          "condition": {
+            "ja": "Web サービスなど、信頼していない Java Web Start アプリやアプレットを介さず当該 API にデータが渡る場合に影響します。",
+            "en": "Applies when data reaches the affected APIs, for example through a web service, outside untrusted Java Web Start applications and applets."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-114942",
+          "cvss": {
+            "version": "3.1",
+            "score": 7.0
+          },
+          "summary": {
+            "ja": "Java ライブラリで情報の漏えい、改変、サービス停止が起こるおそれがあります。",
+            "en": "A Java library issue could cause data exposure, data modification, or denial of service."
+          },
+          "condition": {
+            "ja": "Web サービスなど、信頼していない Java Web Start アプリやアプレットを介さず当該 API にデータが渡る場合に影響します。",
+            "en": "Applies when data reaches the affected APIs, for example through a web service, outside untrusted Java Web Start applications and applets."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-114943",
+          "cvss": {
+            "version": "3.1",
+            "score": 6.5
+          },
+          "summary": {
+            "ja": "HotSpot で情報の改変やサービス停止が起こるおそれがあります。",
+            "en": "A HotSpot issue could cause data modification or denial of service."
+          },
+          "condition": {
+            "ja": "当該 API にデータが渡る場合や、Java サンドボックスに依存して信頼していないコードを実行する構成に影響します。",
+            "en": "Applies when data reaches the affected APIs or when a deployment runs untrusted code and relies on the Java sandbox."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-114944",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.9
+          },
+          "summary": {
+            "ja": "Java コアライブラリで情報が改変されるおそれがあります。",
+            "en": "A core Java library issue could allow data modification."
+          },
+          "condition": {
+            "ja": "当該 API にデータが渡る場合や、Java サンドボックスに依存して信頼していないコードを実行する構成に影響します。",
+            "en": "Applies when data reaches the affected APIs or when a deployment runs untrusted code and relies on the Java sandbox."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-114945",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "Java ライブラリで情報が改変されるおそれがあります。",
+            "en": "A Java library issue could allow data modification."
+          },
+          "condition": {
+            "ja": "当該 API にデータが渡る場合や、Java サンドボックスに依存して信頼していないコードを実行する構成に影響します。",
+            "en": "Applies when data reaches the affected APIs or when a deployment runs untrusted code and relies on the Java sandbox."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-114946",
+          "cvss": {
+            "version": "3.1",
+            "score": 4.8
+          },
+          "summary": {
+            "ja": "コンパイラで情報の漏えいや改変が起こるおそれがあります。",
+            "en": "A compiler issue could allow data exposure or modification."
+          },
+          "condition": {
+            "ja": "当該 API にデータが渡る場合や、Java サンドボックスに依存して信頼していないコードを実行する構成に影響します。",
+            "en": "Applies when data reaches the affected APIs or when a deployment runs untrusted code and relies on the Java sandbox."
+          },
+          "majors": [
+            21
+          ]
+        }
+      ]
+    },
+    {
+      "product": "temurin",
+      "details_url": "https://openjdk.org/groups/vulnerability/advisories/2026-10-24",
+      "updates_url": "https://adoptium.net/news/2026/10/temurin-october-2026-emudhra",
+      "series": [
+        {
+          "major": 21,
+          "fixed_build": "21.0.13+9"
+        }
+      ],
+      "findings": [
+        {
+          "cve": "CVE-2026-114820",
+          "cvss": {
+            "version": "3.1",
+            "score": 9.1
+          },
+          "summary": {
+            "ja": "eMudhra の鍵漏えいに対し、関連するルート認証局の信頼を取り除く対処が案内されています。",
+            "en": "The eMudhra key compromise is addressed by removing trust in the affected root CAs."
+          },
+          "condition": {
+            "ja": "影響は利用中の信頼ストアに依存します。無効化の状態は画面上部で確認できます。",
+            "en": "Exposure depends on the trust store in use. Check the certificate status above."
+          },
+          "majors": [
+            21
+          ]
+        }
+      ]
+    },
+    {
+      "product": "temurin",
+      "details_url": "https://openjdk.org/groups/vulnerability/advisories/2026-10-21",
+      "updates_url": "https://adoptium.net/news/2026/10/temurin-october-2026-emudhra",
+      "series": [
+        {
+          "major": 21,
+          "fixed_build": "21.0.13+9"
+        }
+      ],
+      "findings": [
+        {
+          "cve": "CVE-2026-91403",
+          "cvss": {
+            "version": "3.1",
+            "score": 9.1
+          },
+          "summary": {
+            "ja": "eMudhra の中間認証局の鍵が漏えいし、不正な証明書を信頼するおそれがあります。",
+            "en": "Compromised eMudhra intermediate CA keys may allow fraudulent certificates to be trusted."
+          },
+          "condition": {
+            "ja": "影響は利用中の信頼ストアに依存します。無効化の状態は画面上部で確認できます。",
+            "en": "Exposure depends on the trust store in use. Check the certificate status above."
+          },
+          "majors": [
+            21
+          ]
+        }
+      ]
+    },
+    {
+      "product": "temurin",
+      "details_url": "https://openjdk.org/groups/vulnerability/advisories/2026-10-20",
+      "updates_url": "https://github.com/adoptium/temurin21-binaries/releases/tag/jdk-21.0.13+9",
+      "series": [
+        {
+          "major": 21,
+          "listed_release": "21.0.12.1",
+          "includes_earlier": true,
+          "fixed_build": "21.0.13+9"
+        }
+      ],
+      "findings": [
+        {
+          "cve": "CVE-2026-91415",
+          "cvss": {
+            "version": "3.1",
+            "score": 7.0
+          },
+          "summary": {
+            "ja": "Java 2D の脆弱性",
+            "en": "Java 2D vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91398",
+          "cvss": {
+            "version": "3.1",
+            "score": 6.8
+          },
+          "summary": {
+            "ja": "java.net の脆弱性",
+            "en": "java.net vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-101516",
+          "cvss": {
+            "version": "3.1",
+            "score": 6.5
+          },
+          "summary": {
+            "ja": "java.security の脆弱性",
+            "en": "java.security vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-83395",
+          "cvss": {
+            "version": "3.1",
+            "score": 6.5
+          },
+          "summary": {
+            "ja": "java.net の脆弱性",
+            "en": "java.net vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-87294",
+          "cvss": {
+            "version": "3.1",
+            "score": 6.5
+          },
+          "summary": {
+            "ja": "java.security の脆弱性",
+            "en": "java.security vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91394",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.9
+          },
+          "summary": {
+            "ja": "java.net の脆弱性",
+            "en": "java.net vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-87290",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.9
+          },
+          "summary": {
+            "ja": "JAXP の脆弱性",
+            "en": "JAXP vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-83387",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.9
+          },
+          "summary": {
+            "ja": "JDBC の脆弱性",
+            "en": "JDBC vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91462",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.9
+          },
+          "summary": {
+            "ja": "Java GSS-API の脆弱性",
+            "en": "Java GSS-API vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-83374",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.9
+          },
+          "summary": {
+            "ja": "java.security の脆弱性",
+            "en": "java.security vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91410",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "java.io の脆弱性",
+            "en": "java.io vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-87291",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "java.net の脆弱性",
+            "en": "java.net vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91332",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "java.net の脆弱性",
+            "en": "java.net vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91451",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "java.net の脆弱性",
+            "en": "java.net vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91373",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "JSSE / TLS の脆弱性",
+            "en": "JSSE / TLS vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-83380",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "javax.security の脆弱性",
+            "en": "javax.security vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-83400",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "JAXP の脆弱性",
+            "en": "JAXP vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91463",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "Java GSS-API の脆弱性",
+            "en": "Java GSS-API vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91464",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "Java GSS-API の脆弱性",
+            "en": "Java GSS-API vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91453",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "java.net の脆弱性",
+            "en": "java.net vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91452",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "java.net の脆弱性",
+            "en": "java.net vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91418",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "Image I/O の脆弱性",
+            "en": "Image I/O vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-83378",
+          "cvss": {
+            "version": "3.1",
+            "score": 4.8
+          },
+          "summary": {
+            "ja": "HotSpot コンパイラ の脆弱性",
+            "en": "HotSpot compiler vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91487",
+          "cvss": {
+            "version": "3.1",
+            "score": 4.8
+          },
+          "summary": {
+            "ja": "HotSpot コンパイラ の脆弱性",
+            "en": "HotSpot compiler vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-83381",
+          "cvss": {
+            "version": "3.1",
+            "score": 4.8
+          },
+          "summary": {
+            "ja": "java.security の脆弱性",
+            "en": "java.security vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91374",
+          "cvss": {
+            "version": "3.1",
+            "score": 4.8
+          },
+          "summary": {
+            "ja": "Serviceability Tools の脆弱性",
+            "en": "Serviceability Tools vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91375",
+          "cvss": {
+            "version": "3.1",
+            "score": 4.7
+          },
+          "summary": {
+            "ja": "jlink の脆弱性",
+            "en": "jlink vulnerability"
+          },
+          "condition": {
+            "ja": "jlink を利用する環境に関する脆弱性です。この機能の同梱と利用状況を確認してください。",
+            "en": "Applies to environments that use jlink. Check whether this tool is present and in use."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91379",
+          "cvss": {
+            "version": "3.1",
+            "score": 4.7
+          },
+          "summary": {
+            "ja": "JShell の脆弱性",
+            "en": "JShell vulnerability"
+          },
+          "condition": {
+            "ja": "JShell を利用する環境に関する脆弱性です。この機能の同梱と利用状況を確認してください。",
+            "en": "Applies to environments that use JShell. Check whether this tool is present and in use."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91380",
+          "cvss": {
+            "version": "3.1",
+            "score": 4.0
+          },
+          "summary": {
+            "ja": "java.util の脆弱性",
+            "en": "java.util vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91333",
+          "cvss": {
+            "version": "3.1",
+            "score": 3.7
+          },
+          "summary": {
+            "ja": "java.security の脆弱性",
+            "en": "java.security vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91334",
+          "cvss": {
+            "version": "3.1",
+            "score": 3.7
+          },
+          "summary": {
+            "ja": "Image I/O の脆弱性",
+            "en": "Image I/O vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-87367",
+          "cvss": {
+            "version": "3.1",
+            "score": 3.7
+          },
+          "summary": {
+            "ja": "JAXP の脆弱性",
+            "en": "JAXP vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-87292",
+          "cvss": {
+            "version": "3.1",
+            "score": 3.7
+          },
+          "summary": {
+            "ja": "java.net の脆弱性",
+            "en": "java.net vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-83376",
+          "cvss": {
+            "version": "3.1",
+            "score": 3.7
+          },
+          "summary": {
+            "ja": "JSSE / TLS の脆弱性",
+            "en": "JSSE / TLS vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91461",
+          "cvss": {
+            "version": "3.1",
+            "score": 3.7
+          },
+          "summary": {
+            "ja": "java.security の脆弱性",
+            "en": "java.security vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91397",
+          "cvss": {
+            "version": "3.1",
+            "score": 3.6
+          },
+          "summary": {
+            "ja": "Serviceability の脆弱性",
+            "en": "Serviceability vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91400",
+          "cvss": {
+            "version": "3.1",
+            "score": 3.1
+          },
+          "summary": {
+            "ja": "Java Sound の脆弱性",
+            "en": "Java Sound vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-91335",
+          "cvss": {
+            "version": "3.1",
+            "score": 2.6
+          },
+          "summary": {
+            "ja": "AWT の脆弱性",
+            "en": "AWT vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        }
+      ]
+    },
+    {
+      "product": "temurin",
+      "details_url": "https://openjdk.org/groups/vulnerability/advisories/2026-08-18",
+      "updates_url": "https://github.com/adoptium/temurin21-binaries/releases/tag/jdk-21.0.12.1+1",
+      "series": [
+        {
+          "major": 21,
+          "listed_release": "21.0.12",
+          "includes_earlier": true,
+          "fixed_build": "21.0.12.1+1"
+        }
+      ],
+      "findings": [
+        {
+          "cve": "CVE-2026-61308",
+          "cvss": {
+            "version": "3.1",
+            "score": 6.8
+          },
+          "summary": {
+            "ja": "java.net の脆弱性",
+            "en": "java.net vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-70907",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "JSSE / TLS の脆弱性",
+            "en": "JSSE / TLS vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-60589",
+          "cvss": {
+            "version": "3.1",
+            "score": 3.7
+          },
+          "summary": {
+            "ja": "XML 署名 の脆弱性",
+            "en": "XML signature vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        }
+      ]
+    },
+    {
+      "product": "temurin",
+      "details_url": "https://openjdk.org/groups/vulnerability/advisories/2026-07-21",
+      "updates_url": "https://github.com/adoptium/temurin21-binaries/releases/tag/jdk-21.0.12+8",
+      "series": [
+        {
+          "major": 21,
+          "listed_release": "21.0.11",
+          "includes_earlier": true,
+          "fixed_build": "21.0.12+8"
+        }
+      ],
+      "findings": [
+        {
+          "cve": "CVE-2026-41254",
+          "cvss": {
+            "version": "3.1",
+            "score": 7.5
+          },
+          "summary": {
+            "ja": "Java 2D の脆弱性",
+            "en": "Java 2D vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-47063",
+          "cvss": {
+            "version": "3.1",
+            "score": 7.5
+          },
+          "summary": {
+            "ja": "java.security の脆弱性",
+            "en": "java.security vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-60147",
+          "cvss": {
+            "version": "3.1",
+            "score": 6.5
+          },
+          "summary": {
+            "ja": "java.security の脆弱性",
+            "en": "java.security vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-46968",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.9
+          },
+          "summary": {
+            "ja": "JSSE / TLS の脆弱性",
+            "en": "JSSE / TLS vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-47059",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.9
+          },
+          "summary": {
+            "ja": "Java 2D の脆弱性",
+            "en": "Java 2D vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-47027",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "java.security の脆弱性",
+            "en": "java.security vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-47021",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "Java 2D の脆弱性",
+            "en": "Java 2D vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-46917",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "JSSE / TLS の脆弱性",
+            "en": "JSSE / TLS vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-47010",
+          "cvss": {
+            "version": "3.1",
+            "score": 3.7
+          },
+          "summary": {
+            "ja": "Image I/O の脆弱性",
+            "en": "Image I/O vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        }
+      ]
+    },
+    {
+      "product": "temurin",
+      "details_url": "https://openjdk.org/groups/vulnerability/advisories/2026-04-21",
+      "updates_url": "https://github.com/adoptium/temurin21-binaries/releases/tag/jdk-21.0.11+10",
+      "series": [
+        {
+          "major": 21,
+          "listed_release": "21.0.10",
+          "includes_earlier": true,
+          "fixed_build": "21.0.11+10"
+        }
+      ],
+      "findings": [
+        {
+          "cve": "CVE-2026-22016",
+          "cvss": {
+            "version": "3.1",
+            "score": 7.5
+          },
+          "summary": {
+            "ja": "JAXP の脆弱性",
+            "en": "JAXP vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-34282",
+          "cvss": {
+            "version": "3.1",
+            "score": 7.5
+          },
+          "summary": {
+            "ja": "java.net の脆弱性",
+            "en": "java.net vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-22021",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "java.security の脆弱性",
+            "en": "java.security vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-22013",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "Java GSS-API の脆弱性",
+            "en": "Java GSS-API vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-23865",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.3
+          },
+          "summary": {
+            "ja": "Java 2D の脆弱性",
+            "en": "Java 2D vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-22018",
+          "cvss": {
+            "version": "3.1",
+            "score": 3.7
+          },
+          "summary": {
+            "ja": "java.util の脆弱性",
+            "en": "java.util vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-22007",
+          "cvss": {
+            "version": "3.1",
+            "score": 2.9
+          },
+          "summary": {
+            "ja": "java.security の脆弱性",
+            "en": "java.security vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-34268",
+          "cvss": {
+            "version": "3.1",
+            "score": 2.9
+          },
+          "summary": {
+            "ja": "java.security の脆弱性",
+            "en": "java.security vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        }
+      ]
+    },
+    {
+      "product": "temurin",
+      "details_url": "https://openjdk.org/groups/vulnerability/advisories/2026-01-20",
+      "updates_url": "https://github.com/adoptium/temurin21-binaries/releases/tag/jdk-21.0.10+7",
+      "series": [
+        {
+          "major": 21,
+          "listed_release": "21.0.9",
+          "includes_earlier": true,
+          "fixed_build": "21.0.10+7"
+        }
+      ],
+      "findings": [
+        {
+          "cve": "CVE-2026-21945",
+          "cvss": {
+            "version": "3.1",
+            "score": 7.5
+          },
+          "summary": {
+            "ja": "java.security の脆弱性",
+            "en": "java.security vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-21932",
+          "cvss": {
+            "version": "3.1",
+            "score": 7.4
+          },
+          "summary": {
+            "ja": "AWT の脆弱性",
+            "en": "AWT vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-21933",
+          "cvss": {
+            "version": "3.1",
+            "score": 6.1
+          },
+          "summary": {
+            "ja": "java.net の脆弱性",
+            "en": "java.net vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2026-21925",
+          "cvss": {
+            "version": "3.1",
+            "score": 4.8
+          },
+          "summary": {
+            "ja": "RMI の脆弱性",
+            "en": "RMI vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        }
+      ]
+    },
+    {
+      "product": "temurin",
+      "details_url": "https://openjdk.org/groups/vulnerability/advisories/2025-10-21",
+      "updates_url": "https://github.com/adoptium/temurin21-binaries/releases/tag/jdk-21.0.9+10",
+      "series": [
+        {
+          "major": 21,
+          "listed_release": "21.0.8",
+          "includes_earlier": true,
+          "fixed_build": "21.0.9+10"
+        }
+      ],
+      "findings": [
+        {
+          "cve": "CVE-2025-53066",
+          "cvss": {
+            "version": "3.1",
+            "score": 7.5
+          },
+          "summary": {
+            "ja": "JAXP の脆弱性",
+            "en": "JAXP vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2025-53057",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.9
+          },
+          "summary": {
+            "ja": "java.security の脆弱性",
+            "en": "java.security vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2025-61748",
+          "cvss": {
+            "version": "3.1",
+            "score": 3.7
+          },
+          "summary": {
+            "ja": "Core Libraries の脆弱性",
+            "en": "Core Libraries vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        }
+      ]
+    },
+    {
+      "product": "temurin",
+      "details_url": "https://openjdk.org/groups/vulnerability/advisories/2025-07-15",
+      "updates_url": "https://github.com/adoptium/temurin21-binaries/releases/tag/jdk-21.0.8+9",
+      "series": [
+        {
+          "major": 21,
+          "listed_release": "21.0.7",
+          "includes_earlier": true,
+          "fixed_build": "21.0.8+9"
+        }
+      ],
+      "findings": [
+        {
+          "cve": "CVE-2025-50059",
+          "cvss": {
+            "version": "3.1",
+            "score": 8.6
+          },
+          "summary": {
+            "ja": "java.net の脆弱性",
+            "en": "java.net vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2025-30749",
+          "cvss": {
+            "version": "3.1",
+            "score": 8.1
+          },
+          "summary": {
+            "ja": "Java 2D の脆弱性",
+            "en": "Java 2D vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2025-50106",
+          "cvss": {
+            "version": "3.1",
+            "score": 8.1
+          },
+          "summary": {
+            "ja": "Java 2D の脆弱性",
+            "en": "Java 2D vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2025-30754",
+          "cvss": {
+            "version": "3.1",
+            "score": 4.8
+          },
+          "summary": {
+            "ja": "JSSE / TLS の脆弱性",
+            "en": "JSSE / TLS vulnerability"
+          },
+          "condition": {
+            "ja": "影響を受ける構成や利用条件は、個別の CVE レコードで確認できます。",
+            "en": "See the individual CVE record for affected configurations."
+          },
+          "majors": [
+            21
+          ]
+        }
+      ]
+    },
+    {
+      "product": "temurin",
+      "details_url": "https://openjdk.org/groups/vulnerability/advisories/2025-04-15",
+      "updates_url": "https://github.com/adoptium/temurin21-binaries/releases/tag/jdk-21.0.7+6",
+      "series": [
+        {
+          "major": 21,
+          "listed_release": "21.0.6",
+          "includes_earlier": true,
+          "fixed_build": "21.0.7+6"
+        }
+      ],
+      "findings": [
+        {
+          "cve": "CVE-2025-21587",
+          "cvss": {
+            "version": "3.1",
+            "score": 7.4
+          },
+          "summary": {
+            "ja": "JSSE の TLS 接続で不正なデータの受信により通信の機密性・完全性に影響するおそれがあります。",
+            "en": "Improper handling of TLS records in JSSE can affect connection confidentiality and integrity."
+          },
+          "condition": {
+            "ja": "影響を受ける JSSE の TLS 接続について、個別の CVE レコードを確認してください。",
+            "en": "See the individual CVE record for affected JSSE TLS connections."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2025-30698",
+          "cvss": {
+            "version": "3.1",
+            "score": 5.6
+          },
+          "summary": {
+            "ja": "Java 2D を通じ、Java データの参照や変更が行われるおそれがあります。",
+            "en": "A Java 2D vulnerability could allow Java data to be read or modified."
+          },
+          "condition": {
+            "ja": "Java サンドボックスに依存し、信頼していないコードを読み込んで実行する構成が対象です。",
+            "en": "Applies to deployments that load and run untrusted code and rely on the Java sandbox."
+          },
+          "majors": [
+            21
+          ]
+        },
+        {
+          "cve": "CVE-2025-30691",
+          "cvss": {
+            "version": "3.1",
+            "score": 4.8
+          },
+          "summary": {
+            "ja": "HotSpot コンパイラに、Java データの参照や変更につながる脆弱性があります。",
+            "en": "A HotSpot compiler vulnerability could allow Java data to be read or modified."
+          },
+          "condition": {
+            "ja": "実行条件は個別の CVE レコードを確認してください。",
+            "en": "See the individual CVE record for the conditions of exploitation."
+          },
+          "majors": [
+            21
+          ]
+        }
+      ]
+    }
+  ]
+}

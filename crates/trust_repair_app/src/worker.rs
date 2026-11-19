@@ -2,7 +2,7 @@
 /*!
  * - ファイル: worker.rs
  * - 概要: GUI の一操作を単一所有 thread で実行し、型付き channel で結果を返します
- * - バージョン: 01.00.00
+ * - バージョン: 01.01.00
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -21,6 +21,7 @@
  * ```text
  * VerNo.        author        update      comment
  * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
+ * Ver.01.01.00  Shunji Ogawa  2026/11/19  ストア診断の前に Java の勧告照合結果を通知
  * ```
  *
  * 備考:
@@ -38,11 +39,13 @@ use std::thread::{self, JoinHandle};
 use trust_repair_core::{ChangePlan, PlanError, embedded_policy};
 use trust_repair_windows::{
 	BuiltinPasswords, Cancellation, CustomStore, HistoryEntry, HistoryState, JavaEnvironment,
-	JavaError, ScanGroup, ScanProgress, StorePassword, TransactionError, TransactionInspection,
-	TransactionOptions, TransactionOutcome, TransactionProgress, apply_transaction,
-	inspect_transaction, list_history, recover_transaction, restore_transaction, scan_java,
-	select_java,
+	JavaError, ProcessError, ScanGroup, ScanProgress, StorePassword, TransactionError,
+	TransactionInspection, TransactionOptions, TransactionOutcome, TransactionProgress,
+	apply_transaction, inspect_transaction, list_history, recover_transaction, restore_transaction,
+	scan_java, select_java,
 };
+
+use crate::advisory_file;
 
 /// 診断から計画まで同じ実体を所有する、未適用の読み取り結果です
 pub struct Diagnosis {
@@ -91,12 +94,12 @@ pub enum Command {
 		/// 一操作中だけ所有する認証入力
 		credentials: Credentials,
 	},
-	/// 詳細設定からだけ読み取り診断します
+	/// 選択 Java の勧告照合と信頼ストアの読み取り診断を行います
 	Scan {
 		/// 利用者が選んだ Java root
 		root: PathBuf,
-		/// 一操作中だけ所有する認証入力
-		credentials: Credentials,
+		/// ストア診断に使う認証。検証失敗でも勧告照合は実行します
+		credentials: Result<Credentials, ProcessError>,
 	},
 	/// 選択 Java の直近履歴を現物照合して、復元前の一回の確認へ渡します
 	PrepareRestore {
@@ -290,6 +293,11 @@ fn transaction_permission(value: &TransactionError) -> bool {
 
 /// 所有 worker からの型付き通知です
 pub enum Event {
+	/// ストアの読取りより先に得た選択 Java の勧告照合結果です
+	Advisories(
+		/// 配布元・版・該当勧告の表示用結果
+		advisory_file::AdvisoryResult,
+	),
 	/// 実際の診断工程です
 	Scan(
 		/// 呼出し側の表示言語で案内する工程名
@@ -407,8 +415,20 @@ fn execute(
 		#[cfg(feature = "gui-qa")]
 		Command::QaDisconnect => Err(Failure::Interrupted),
 		Command::Deactivate { root, credentials } => {
-			let mut diagnosis =
-				diagnose(&root, &credentials, options, cancellation, sender, context)?;
+			let environment = select_java(&root, cancellation).map_err(Failure::Java)?;
+			notify(
+				sender,
+				context,
+				Event::Advisories(advisory_file::assess(&environment)),
+			);
+			let mut diagnosis = diagnose(
+				environment,
+				&credentials,
+				options,
+				cancellation,
+				sender,
+				context,
+			)?;
 			let local_options = TransactionOptions::for_java(&diagnosis.environment)
 				.map_err(Failure::Transaction)?;
 			// 同じJavaの直近未完了がある場合、新しい変更より復旧確認を優先する
@@ -461,8 +481,23 @@ fn execute(
 			})
 		}
 		Command::Scan { root, credentials } => {
-			diagnose(&root, &credentials, options, cancellation, sender, context)
-				.map(|value| Completed::Scan(Box::new(value)))
+			let environment = select_java(&root, cancellation).map_err(Failure::Java)?;
+			// 外部の履歴やストア認証の失敗にかかわらず、取得できた版情報を利用できるようにする
+			notify(
+				sender,
+				context,
+				Event::Advisories(advisory_file::assess(&environment)),
+			);
+			let credentials = credentials.map_err(Failure::Process)?;
+			diagnose(
+				environment,
+				&credentials,
+				options,
+				cancellation,
+				sender,
+				context,
+			)
+			.map(|value| Completed::Scan(Box::new(value)))
 		}
 		Command::PrepareRestore { root } => {
 			let environment = select_java(&root, cancellation).map_err(Failure::Java)?;
@@ -563,10 +598,10 @@ fn execute(
  *
  * # Arguments
  *
- * - `root`: 利用者が選択した Java の元パス
+ * - `environment`: 選択済みの Java とストア診断用の実体情報
  * - `credentials`: 標準二種と明示 custom の認証入力
  * - `legacy_options`: 同じ Java に属する従来履歴の参照先
- * - `cancellation`: Java と各 keytool 実行で監視する中断要求
+ * - `cancellation`: 各 keytool 実行で監視する中断要求
  * - `sender`: 診断の工程通知先
  * - `context`: 通知後の再描画先
  *
@@ -577,11 +612,11 @@ fn execute(
  *
  * # Errors
  *
- * Java・履歴の取得、または実在する jssecacerts の明示入力不足
+ * 定義・履歴の取得、または実在する jssecacerts の明示入力不足
  */
 //------------------------------------------------------------------------------
 fn diagnose(
-	root: &std::path::Path,
+	environment: JavaEnvironment,
 	credentials: &Credentials,
 	legacy_options: &TransactionOptions,
 	cancellation: &Cancellation,
@@ -589,7 +624,6 @@ fn diagnose(
 	context: &eframe::egui::Context,
 ) -> Result<Diagnosis, Failure> {
 	let policy = embedded_policy().map_err(|_| Failure::Policy)?;
-	let environment = select_java(root, cancellation).map_err(Failure::Java)?;
 	let history = history_for_java(&environment, legacy_options)?;
 	// jssecacerts が実在する場合は専用入力を要求し、不在時だけ未使用の引数を補う
 	let jssecacerts = if environment.candidate_stores().len() > 1 {
@@ -827,8 +861,9 @@ mod tests {
 		let context = eframe::egui::Context::default();
 		let (sender, _receiver) = mpsc::channel();
 		let token = Cancellation::default();
+		let environment = select_java(&java, &token).expect("isolated Java metadata");
 		let diagnosis = diagnose(
-			&java,
+			environment,
 			&credentials(&root),
 			&legacy,
 			&token,

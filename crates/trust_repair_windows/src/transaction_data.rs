@@ -2,7 +2,7 @@
 /*!
  * - ファイル: transaction_data.rs
  * - 概要: manifest と順序付き journal の schema・上限・復旧入力を検証します
- * - バージョン: 01.00.00
+ * - バージョン: 01.00.01
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -21,6 +21,7 @@
  * ```text
  * VerNo.        author        update      comment
  * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
+ * Ver.01.00.01  Shunji Ogawa  2026/11/19  同一 schema の旧版の記録と置換時の Archive 追加に対応
  * ```
  *
  * 備考:
@@ -40,7 +41,9 @@ use serde::{Deserialize, Serialize};
 use trust_repair_core::{
 	EntryKind, MAX_INPUT_BYTES, Policy, StoreFormat, StoreInventory, embedded_policy,
 };
-use windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ;
+use windows_sys::Win32::Storage::FileSystem::{
+	FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ,
+};
 
 use crate::snapshot::{FileSnapshot, read_snapshot};
 use crate::transaction::{TransactionCode, TransactionError, TransactionPhase, TransactionState};
@@ -210,7 +213,7 @@ pub(crate) struct Manifest {
 	pub schema_version: u32,
 	/// directory 名と一致する ID
 	pub transaction_id: String,
-	/// 作成した製品の版
+	/// 記録を作成した製品の版。読み取り互換性は schema と定義で判定します
 	pub app_version: String,
 	/// 今回の定義 ID
 	pub policy_id: String,
@@ -241,11 +244,11 @@ impl Manifest {
 	//------------------------------------------------------------------------------
 	pub fn validate(&self, id: &str, root: &Path) -> Result<(), TransactionError> {
 		let policy = embedded_policy().map_err(|_| invalid())?;
-		// schema・版・定義・Java・件数を先に確認し、未知の保存形式を解釈しない
+		// schema が同じ旧版の記録も、定義・Java・実体に対する同じ検証で受け付ける
 		if self.schema_version != 1
 			|| !valid_id(id)
 			|| self.transaction_id != id
-			|| self.app_version != env!("CARGO_PKG_VERSION")
+			|| !valid_app_version(&self.app_version)
 			|| self.policy_id != policy.id()
 			|| self.policy_hashes
 				!= policy
@@ -866,6 +869,20 @@ pub(crate) fn valid_id(id: &str) -> bool {
 
 //------------------------------------------------------------------------------
 /**
+ * 作成版の出所情報を、長さの限られたバージョン文字列として検査します
+ */
+//------------------------------------------------------------------------------
+fn valid_app_version(value: &str) -> bool {
+	!value.is_empty()
+		&& value.len() <= 128
+		&& value.as_bytes()[0].is_ascii_alphanumeric()
+		&& value
+			.bytes()
+			.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'+'))
+}
+
+//------------------------------------------------------------------------------
+/**
  * SHA-256 の上位文字を正規形とし、不正な長さや文字は補正しません
  */
 //------------------------------------------------------------------------------
@@ -916,8 +933,16 @@ fn valid_snapshot(snapshot: &FileSnapshot) -> bool {
  */
 //------------------------------------------------------------------------------
 pub(crate) fn same_preserved_metadata(left: &FileSnapshot, right: &FileSnapshot) -> bool {
-	left.attributes() == right.attributes()
-		&& left.creation_time() == right.creation_time()
+	left.attributes() == right.attributes() && same_creation_and_security(left, right)
+}
+
+//------------------------------------------------------------------------------
+/**
+ * 作成日時と owner/group/DACL の一致を調べます
+ */
+//------------------------------------------------------------------------------
+fn same_creation_and_security(left: &FileSnapshot, right: &FileSnapshot) -> bool {
+	left.creation_time() == right.creation_time()
 		&& same_security(left.security_descriptor(), right.security_descriptor())
 }
 
@@ -927,10 +952,50 @@ pub(crate) fn same_preserved_metadata(left: &FileSnapshot, right: &FileSnapshot)
  */
 //------------------------------------------------------------------------------
 pub(crate) fn same_content_metadata(left: &FileSnapshot, right: &FileSnapshot) -> bool {
+	left.attributes() == right.attributes() && same_content_except_attributes(left, right)
+}
+
+//------------------------------------------------------------------------------
+/**
+ * 記録した同一実体に Windows が追加した Archive だけを許容し、他の項目を照合します
+ */
+//------------------------------------------------------------------------------
+pub(crate) fn same_replaced_content_metadata(
+	actual: &FileSnapshot,
+	expected: &FileSnapshot,
+) -> bool {
+	(actual.attributes() == expected.attributes()
+		|| actual.identity() == expected.identity()
+			&& archive_added(actual.attributes(), expected.attributes()))
+		&& same_content_except_attributes(actual, expected)
+}
+
+//------------------------------------------------------------------------------
+/**
+ * Archive の追加だけを検出します。Normal は単独で「他属性なし」を表す値です
+ */
+//------------------------------------------------------------------------------
+pub(crate) fn archive_added(actual: u32, expected: u32) -> bool {
+	let with_archive = match expected {
+		FILE_ATTRIBUTE_NORMAL => FILE_ATTRIBUTE_ARCHIVE,
+		flags if flags != 0 && flags & (FILE_ATTRIBUTE_NORMAL | FILE_ATTRIBUTE_ARCHIVE) == 0 => {
+			flags | FILE_ATTRIBUTE_ARCHIVE
+		}
+		_ => return false,
+	};
+	actual == with_archive
+}
+
+//------------------------------------------------------------------------------
+/**
+ * 属性以外の全項目を照合します。復元で file ID の再利用は要求しません
+ */
+//------------------------------------------------------------------------------
+fn same_content_except_attributes(left: &FileSnapshot, right: &FileSnapshot) -> bool {
 	left.sha256() == right.sha256()
 		&& left.length() == right.length()
 		&& left.last_write_time() == right.last_write_time()
-		&& same_preserved_metadata(left, right)
+		&& same_creation_and_security(left, right)
 		&& left.canonical_path() == right.canonical_path()
 		&& left.identity().volume_serial == right.identity().volume_serial
 }

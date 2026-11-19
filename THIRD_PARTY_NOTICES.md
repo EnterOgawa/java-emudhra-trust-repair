@@ -38,5 +38,8 @@ Windowsのリソース埋込みにはビルド時だけ `embed-resource 3.0.12`�
 このソース一式へ第三者crateのソースをvendoringしていません。
 各crateのライセンス表示・許諾文は取得したcrateに含まれるものを参照してください。
 MSゴシックのfamily照合には、既存の依存物でもある `skrifa 0.44.0`（MIT OR Apache-2.0）を直接利用します。
+公式勧告の取込には `quick-xml 0.41.0` と `scraper 0.29.0` を、検証済み定義の保存には `tempfile 3.27.0` を利用します。
+Windows版の配布物には通常ビルド用の依存crateとフォントの許諾文を `THIRD_PARTY_LICENSES.txt` にまとめています。
+MPL 2.0の依存crateは、そのライセンスに従って次の場所から対応するソースを入手できます。[cssparser 0.38.0](https://static.crates.io/crates/cssparser/cssparser-0.38.0.crate) · [cssparser-macros 0.7.1](https://static.crates.io/crates/cssparser-macros/cssparser-macros-0.7.1.crate) · [dtoa-short 0.3.5](https://static.crates.io/crates/dtoa-short/dtoa-short-0.3.5.crate) · [selectors 0.41.0](https://static.crates.io/crates/selectors/selectors-0.41.0.crate)
 exeを再配布する際には、そのビルドに含まれる依存物と埋込みフォントの必要な表示・許諾文も揃えてください。
 この文書は全依存物のライセンス監査完了を示すものではありません。

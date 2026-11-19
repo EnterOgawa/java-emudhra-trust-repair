@@ -2,7 +2,7 @@
 /*!
  * - ファイル: transactions.rs
  * - 概要: 隔離した実 Java で適用・全件検証・復元と失敗時の保全を確認します
- * - バージョン: 01.00.00
+ * - バージョン: 01.00.01
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -21,6 +21,7 @@
  * ```text
  * VerNo.        author        update      comment
  * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
+ * Ver.01.00.01  Shunji Ogawa  2026/11/19  旧版の未完了記録と Normal 属性の適用・復元を検証
  * ```
  *
  * 備考:
@@ -33,17 +34,23 @@
 
 use std::fs;
 use std::io::Write;
+use std::os::windows::ffi::OsStrExt;
+use std::os::windows::fs::FileTimesExt;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
-use trust_repair_core::{ChangePlan, PlanError, embedded_policy, sha256_hex};
+use trust_repair_core::{ChangePlan, MAX_INPUT_BYTES, PlanError, embedded_policy, sha256_hex};
 use trust_repair_windows::{
 	BuiltinPasswords, Cancellation, CustomStore, FailureBoundary, FailurePoint, HistoryState,
-	JavaEnvironment, ScanGroup, StorePassword, TransactionCode, TransactionOptions,
+	ItemState, JavaEnvironment, ScanGroup, StorePassword, TransactionCode, TransactionOptions,
 	TransactionPhase, TransactionState, apply_transaction, inspect_transaction, list_history,
-	recover_transaction, restore_transaction, scan_java, select_java,
+	read_snapshot, recover_transaction, restore_transaction, scan_java, select_java,
+};
+use windows_sys::Win32::Storage::FileSystem::{
+	FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_NORMAL, SetFileAttributesW,
 };
 
 // 同一 test process の新規 case 名を一意にする
@@ -130,6 +137,259 @@ fn case(major: u16, label: &str) -> (PathBuf, PathBuf, TransactionOptions) {
 	let options =
 		TransactionOptions::with_backup_root(root.join("backups")).expect("dedicated backups");
 	(root, java, options)
+}
+
+//------------------------------------------------------------------------------
+/**
+ * 隔離したケースのファイルだけに、試験条件の Windows ファイル属性を設定します
+ */
+//------------------------------------------------------------------------------
+fn fixture_attributes(path: &Path, attributes: u32) {
+	assert!(
+		path.canonicalize()
+			.expect("fixture file")
+			.starts_with(fixtures())
+	);
+	let name: Vec<_> = path.as_os_str().encode_wide().chain([0]).collect();
+	// SAFETY: 隔離ファイルの終端 NUL 付きパスと試験属性を渡す
+	assert_ne!(unsafe { SetFileAttributesW(name.as_ptr(), attributes) }, 0);
+}
+
+//------------------------------------------------------------------------------
+/**
+ * Normal の cacerts と旧版が残した同一実体の Archive を、復旧・再適用・復元で確認します
+ */
+//------------------------------------------------------------------------------
+#[test]
+#[ignore = "明示された新規 transaction fixtures が必要"]
+fn normal_store_recovers_previous_release_and_roundtrips() {
+	let (_, java, _) = case(21, "normal-previous-release");
+	let target = java.join("lib/security/cacerts");
+	let additional = java.join("lib/security/jssecacerts");
+	fs::rename(&additional, additional.with_extension("fixture")).expect("one-store fixture");
+	fixture_attributes(&target, FILE_ATTRIBUTE_NORMAL);
+	let (original, original_bytes) = read_snapshot(&target, MAX_INPUT_BYTES).expect("normal");
+	assert_eq!(original.attributes(), FILE_ATTRIBUTE_NORMAL);
+
+	let cancellation = Cancellation::default();
+	let environment = select_java(&java, &cancellation).expect("fixture Java");
+	let options = TransactionOptions::for_java(&environment).expect("Java-local backup");
+	let policy = embedded_policy().expect("policy");
+	let secret = password();
+	let scan = || {
+		scan_java(
+			&environment,
+			&policy,
+			&BuiltinPasswords {
+				cacerts: &secret,
+				jssecacerts: &secret,
+			},
+			&[],
+			&cancellation,
+			|_| {},
+		)
+	};
+	let apply = || {
+		let group = scan();
+		let plan = group.plan(&policy).expect("plan");
+		assert_eq!(plan.stores().len(), 1);
+		apply_transaction(
+			&environment,
+			&group,
+			&plan,
+			&[&secret],
+			&options,
+			&cancellation,
+			|_| {},
+		)
+		.expect("normal apply")
+	};
+	let first = apply();
+	let (applied, applied_bytes) = read_snapshot(&target, MAX_INPUT_BYTES).expect("applied");
+	assert_ne!(applied.sha256(), original.sha256());
+	assert_eq!(applied.attributes(), FILE_ATTRIBUTE_NORMAL);
+	let id = &first.transaction_id;
+	let manifest_path = first.backup_directory.join("manifest.json");
+	let journal_path = first.backup_directory.join("journal.jsonl");
+	let backup = first.backup_directory.join("0000.original.bin");
+	let recovery_copy = target
+		.parent()
+		.expect("target parent")
+		.join(format!(".jtr-{id}-0000/apply.recovery"));
+	let (displaced, displaced_bytes) =
+		read_snapshot(&recovery_copy, MAX_INPUT_BYTES).expect("displaced original");
+	assert_eq!(displaced.identity(), original.identity());
+	assert_eq!(displaced_bytes, original_bytes);
+	assert_eq!(fs::read(&backup).expect("backup"), original_bytes);
+
+	// 旧版が一件目の ReplaceFileW の直後に停止した記録と、双方の Archive を再現する
+	fixture_attributes(&target, FILE_ATTRIBUTE_ARCHIVE);
+	fixture_attributes(&recovery_copy, FILE_ATTRIBUTE_ARCHIVE);
+	let mut manifest: serde_json::Value =
+		serde_json::from_slice(&fs::read(&manifest_path).expect("manifest")).expect("JSON");
+	let mut journal: Vec<_> = fs::read(&journal_path)
+		.expect("journal")
+		.split_inclusive(|byte| *byte == b'\n')
+		.take(3)
+		.flatten()
+		.copied()
+		.collect();
+	journal.extend_from_slice(
+		b"{\"sequence\":4,\"event\":\"rolling-back\",\"item\":null,\"operation_id\":null}\n\
+		{\"sequence\":5,\"event\":\"recovery-required\",\"item\":null,\"operation_id\":null}\n",
+	);
+	fs::write(&journal_path, &journal).expect("legacy journal");
+	let inspect = || inspect_transaction(&options, id).expect("inspect history");
+	for version in ["1.0.0", "1.1.0-preview.1"] {
+		manifest["app_version"] = serde_json::json!(version);
+		fs::write(&manifest_path, serde_json::to_vec(&manifest).expect("JSON"))
+			.expect("legacy manifest");
+		let inspection = inspect();
+		assert_eq!(inspection.state, HistoryState::Recoverable);
+		assert_eq!(inspection.items, [ItemState::Applied]);
+		assert!(inspection.java_unchanged);
+	}
+	let manifest_bytes = fs::read(&manifest_path).expect("legacy manifest");
+	let (archived, _) = read_snapshot(&target, MAX_INPUT_BYTES).expect("archive target");
+	let (archived_copy, _) =
+		read_snapshot(&recovery_copy, MAX_INPUT_BYTES).expect("archive recovery");
+	assert_eq!(archived.identity(), applied.identity());
+	assert_eq!(archived.attributes(), FILE_ATTRIBUTE_ARCHIVE);
+	assert_eq!(archived_copy.identity(), original.identity());
+	assert_eq!(archived_copy.attributes(), FILE_ATTRIBUTE_ARCHIVE);
+	assert_eq!(
+		fs::read(&journal_path).expect("journal after inspect"),
+		journal
+	);
+	assert_eq!(
+		fs::read(&backup).expect("backup after inspect"),
+		original_bytes
+	);
+
+	// Archive に別属性、時刻、実体の違いがあれば未知状態とし、対象を置換しない
+	fixture_attributes(&target, FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_HIDDEN);
+	assert_eq!(inspect().state, HistoryState::RecoveryRequired);
+	assert!(
+		recover_transaction(
+			&environment,
+			&options,
+			id,
+			&[&secret],
+			&cancellation,
+			|_| {}
+		)
+		.is_err()
+	);
+	assert_eq!(fs::read(&target).expect("unmodified target"), applied_bytes);
+	fixture_attributes(&target, FILE_ATTRIBUTE_ARCHIVE);
+
+	let original_write = fs::metadata(&target)
+		.expect("metadata")
+		.modified()
+		.expect("mtime");
+	let set_write_time = |time| {
+		fs::OpenOptions::new()
+			.write(true)
+			.open(&target)
+			.expect("fixture time handle")
+			.set_times(fs::FileTimes::new().set_modified(time))
+			.expect("fixture time");
+	};
+	set_write_time(original_write + Duration::from_secs(60));
+	assert_eq!(inspect().state, HistoryState::RecoveryRequired);
+	set_write_time(original_write);
+
+	let held = target.with_extension("fixture-applied");
+	fs::rename(&target, &held).expect("preserve applied identity");
+	fs::copy(&held, &target).expect("same bytes in a different file");
+	let created = fs::metadata(&held)
+		.expect("metadata")
+		.created()
+		.expect("ctime");
+	fs::OpenOptions::new()
+		.write(true)
+		.open(&target)
+		.expect("fixture time handle")
+		.set_times(
+			fs::FileTimes::new()
+				.set_created(created)
+				.set_modified(original_write),
+		)
+		.expect("same times");
+	let (different, _) = read_snapshot(&target, MAX_INPUT_BYTES).expect("different file");
+	assert_ne!(different.identity(), archived.identity());
+	assert_eq!(different.sha256(), archived.sha256());
+	assert_eq!(different.attributes(), archived.attributes());
+	assert_eq!(different.creation_time(), archived.creation_time());
+	assert_eq!(different.last_write_time(), archived.last_write_time());
+	assert_eq!(
+		different.security_descriptor(),
+		archived.security_descriptor()
+	);
+	assert_eq!(inspect().state, HistoryState::RecoveryRequired);
+	fs::remove_file(&target).expect("remove fixture copy");
+	fs::rename(&held, &target).expect("restore applied identity");
+
+	assert_eq!(inspect().state, HistoryState::Recoverable);
+	let recovered = recover_transaction(
+		&environment,
+		&options,
+		id,
+		&[&secret],
+		&cancellation,
+		|_| {},
+	)
+	.expect("recover old release");
+	assert_eq!(recovered.state, TransactionState::Restored);
+	assert_eq!(inspect().state, HistoryState::Restored);
+	assert_eq!(
+		fs::read(&manifest_path).expect("unmodified manifest"),
+		manifest_bytes
+	);
+	assert!(
+		fs::read(&journal_path)
+			.expect("appended journal")
+			.starts_with(&journal)
+	);
+	let assert_original = || {
+		let (actual, bytes) = read_snapshot(&target, MAX_INPUT_BYTES).expect("restored");
+		assert_eq!(bytes, original_bytes);
+		assert_eq!(actual.attributes(), original.attributes());
+		assert_eq!(actual.creation_time(), original.creation_time());
+		assert_eq!(actual.last_write_time(), original.last_write_time());
+		assert_eq!(actual.security_descriptor(), original.security_descriptor());
+	};
+	assert_original();
+	let reapplied = apply();
+	assert_ne!(reapplied.transaction_id, *id);
+	assert_eq!(
+		read_snapshot(&target, MAX_INPUT_BYTES)
+			.expect("reapplied")
+			.0
+			.attributes(),
+		FILE_ATTRIBUTE_NORMAL
+	);
+	let restored = restore_transaction(
+		&environment,
+		&options,
+		&reapplied.transaction_id,
+		&[&secret],
+		&cancellation,
+		|_| {},
+	)
+	.expect("restore new release");
+	assert_eq!(restored.state, TransactionState::Restored);
+	assert_original();
+
+	let acl_change = Command::new("icacls.exe")
+		.creation_flags(0x0800_0000)
+		.arg(&recovery_copy)
+		.args(["/grant", "*S-1-1-0:(R)"])
+		.output()
+		.expect("fixture ACL command");
+	assert!(acl_change.status.success(), "{acl_change:?}");
+	assert_eq!(inspect().state, HistoryState::RecoveryRequired);
+	assert_original();
 }
 
 //------------------------------------------------------------------------------

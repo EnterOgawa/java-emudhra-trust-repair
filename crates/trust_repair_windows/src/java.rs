@@ -2,7 +2,7 @@
 /*!
  * - ファイル: java.rs
  * - 概要: 選択 Java の release・PE 実体・実行 metadata を照合します
- * - バージョン: 01.00.00
+ * - バージョン: 01.02.00
  * - 作成日: 2026/10/27
  * - 制作者: Shunji Ogawa
  * - 著作権: Copyright (c) 2026 EnterSystem CO.,LTD.
@@ -21,6 +21,8 @@
  * ```text
  * VerNo.        author        update      comment
  * Ver.01.00.00  Shunji Ogawa  2026/10/27  新規作成
+ * Ver.01.01.00  Shunji Ogawa  2026/11/19  Java 勧告照合用の実行時情報を追加
+ * Ver.01.02.00  Shunji Ogawa  2026/11/19  定義更新時の再照合用に実行時情報を複製可能にする
  * ```
  *
  * 備考:
@@ -94,12 +96,31 @@ pub struct JavaEnvironment {
 	major: u16,
 	/// release と実行結果で照合した vendor
 	vendor: String,
+	/// 勧告照合用の実行時情報。取得や照合に失敗したときは未設定
+	runtime: Option<JavaRuntime>,
 	/// JDK または JRE の表示用の区別
 	image_kind: JavaImageKind,
 	/// release、java.exe、keytool.exe の順の snapshot
 	snapshots: [FileSnapshot; 3],
 	/// 非対応版を自動変更しないための理由
 	issues: Vec<IssueCode>,
+}
+
+/// Java が実行時に報告した製品とビルドの情報です
+#[derive(Debug, Clone)]
+pub struct JavaRuntime {
+	/// `java.runtime.version`。release に同じ属性がある場合は値を照合済み
+	pub version: String,
+	/// `java.runtime.name` の製品名
+	pub name: String,
+	/// `java.vm.name` の VM 名
+	pub vm_name: String,
+	/// `java.vm.version` の VM ビルド
+	pub vm_version: String,
+	/// `java.vendor.version` の配布識別子。Java が報告した場合に保持
+	pub vendor_version: Option<String>,
+	/// 実行時情報または release に GraalVM を示す値があるか
+	pub has_graalvm_marker: bool,
 }
 
 /// 選択環境の JDK/JRE の区別です
@@ -123,11 +144,20 @@ impl JavaEnvironment {
 
 	//------------------------------------------------------------------------------
 	/**
-	 * 実測した Java の完全な版文字列を返します。版だけで安全とは判定しません
+	 * release と `java.version` で照合した版文字列を返します
 	 */
 	//------------------------------------------------------------------------------
 	pub fn version(&self) -> &str {
 		&self.version
+	}
+
+	//------------------------------------------------------------------------------
+	/**
+	 * 選択中の Java の実行時情報を返します。取得または照合できない場合は `None`
+	 */
+	//------------------------------------------------------------------------------
+	pub fn runtime(&self) -> Option<&JavaRuntime> {
+		self.runtime.as_ref()
 	}
 
 	//------------------------------------------------------------------------------
@@ -357,17 +387,86 @@ pub fn select_java(root: &Path, cancellation: &Cancellation) -> Result<JavaEnvir
 		Some(_) => return Err(JavaError::InvalidRelease),
 	};
 	let issues = support_issues(major);
+	let runtime = runtime_metadata(&output.stderr, &metadata);
 	let environment = JavaEnvironment {
 		root,
 		version,
 		major,
 		vendor,
+		runtime,
 		image_kind,
 		snapshots: [release_snapshot, java_snapshot, keytool_snapshot],
 		issues,
 	};
 	environment.revalidate()?;
 	Ok(environment)
+}
+
+//------------------------------------------------------------------------------
+/**
+ * 既存の Java 起動結果から勧告照合に必要な情報を収集します
+ *
+ * # Arguments
+ *
+ * - `stderr`: `-XshowSettings:properties -version` の UTF-8 出力
+ * - `release`: 選択した Java の構造検査済み release の値
+ *
+ * # Returns
+ *
+ * 実行時情報。不足、重複、不正な値、release に記載された実行時版との不一致は
+ * `None` とし、信頼ストア診断に使う Java 選択の可否は変更しません
+ */
+//------------------------------------------------------------------------------
+fn runtime_metadata(stderr: &str, release: &BTreeMap<String, String>) -> Option<JavaRuntime> {
+	let keys = [
+		"java.runtime.version",
+		"java.runtime.name",
+		"java.vendor.version",
+		"java.vm.name",
+		"java.vm.vendor",
+		"java.vm.version",
+	];
+	let mut properties = BTreeMap::new();
+	// この用途の項目を出力から一度ずつ取得し、空値や複数の申告を拒否する
+	for (key, value) in stderr.lines().filter_map(|line| line.split_once('=')) {
+		let key = key.trim();
+		let value = value.trim();
+		// 他の property の値を勧告用 metadata に取り込まない
+		if keys.contains(&key)
+			&& (value.is_empty()
+				|| value.chars().any(char::is_control)
+				|| properties.insert(key, value).is_some())
+		{
+			return None;
+		}
+	}
+	let runtime_version = *properties.get("java.runtime.version")?;
+	// release に同じビルド属性があれば、実行結果と同一であることを求める
+	if release
+		.get("JAVA_RUNTIME_VERSION")
+		.is_some_and(|expected| expected != runtime_version)
+	{
+		return None;
+	}
+	let has_graalvm_marker = properties
+		.values()
+		.copied()
+		.chain(release.get("IMPLEMENTOR_VERSION").map(String::as_str))
+		.any(|value| {
+			let lower = value.to_ascii_lowercase();
+			lower.contains("graalvm") || lower.contains("-jvmci-")
+		}) || release.contains_key("GRAALVM_VERSION")
+		|| release.contains_key("GRAALVM_EDITION");
+	Some(JavaRuntime {
+		version: runtime_version.to_owned(),
+		name: properties.get("java.runtime.name")?.to_string(),
+		vm_name: properties.get("java.vm.name")?.to_string(),
+		vm_version: properties.get("java.vm.version")?.to_string(),
+		vendor_version: properties
+			.get("java.vendor.version")
+			.map(ToString::to_string),
+		has_graalvm_marker,
+	})
 }
 
 //------------------------------------------------------------------------------
@@ -483,8 +582,35 @@ fn is_amd64_pe(bytes: &[u8]) -> bool {
 /// 対応版・release・実行形式の曖昧さを拒否する契約を確認します
 #[cfg(test)]
 mod tests {
-	use super::{is_amd64_pe, java_major, parse_release, support_issues};
+	use super::{is_amd64_pe, java_major, parse_release, runtime_metadata, support_issues};
 	use trust_repair_core::IssueCode;
+
+	//------------------------------------------------------------------------------
+	/**
+	 * 実行時情報は任意であり、一意な値と release の任意属性から照合することを確認します
+	 */
+	//------------------------------------------------------------------------------
+	#[test]
+	fn checks_advisory_runtime_metadata_separately() {
+		let output = "    java.runtime.name = Java(TM) SE Runtime Environment\n\
+			java.vm.name = Java HotSpot(TM) 64-Bit Server VM\n\
+			java.vm.version = 21.0.13.1+4\n\
+			java.runtime.version = 21.0.13.1+4-LTS";
+		let metadata = parse_release(b"JAVA_VERSION=\"21.0.13.1\"\n").expect("release");
+		let runtime = runtime_metadata(output, &metadata).expect("実行時情報");
+		assert_eq!(runtime.version, "21.0.13.1+4-LTS");
+		assert_eq!(runtime.vm_version, "21.0.13.1+4");
+		assert!(!runtime.has_graalvm_marker);
+		assert!(runtime_metadata("", &metadata).is_none());
+		assert!(
+			runtime_metadata(&format!("{output}\njava.runtime.version ="), &metadata).is_none()
+		);
+		let conflicting =
+			parse_release(b"JAVA_RUNTIME_VERSION=\"21.0.13.1+3-LTS\"").expect("release");
+		assert!(runtime_metadata(output, &conflicting).is_none());
+		let graalvm = format!("{output}\njava.vendor.version = Oracle GraalVM 21.0.13.1+4");
+		assert!(runtime_metadata(&graalvm, &metadata).is_some_and(|info| info.has_graalvm_marker));
+	}
 
 	//------------------------------------------------------------------------------
 	/**
