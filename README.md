@@ -81,8 +81,6 @@ Javaフォルダを選ぶと、対応や確認が必要なCVEを深刻度の高�
 
 Oracle Java SEとEclipse TemurinのJava 11・17・21・25に対応します。起動時に公式勧告をバックグラウンドで確認し、新しいCVEを取り込みます。Temurin固有の影響範囲や修正ビルドが確定できない項目は「要確認」と表示します。[Oracleの公式配信](https://www.oracle.com/a/tech/docs/security-alerts/oracle-cpu-csaf-rss.xml) · [OpenJDKの公式勧告](https://openjdk.org/groups/vulnerability/advisories/)
 
-通常起動時は、取得した定義を `%LOCALAPPDATA%\EnterSystem\JavaTrustRepair\advisories` に保存します。管理者として実行した場合は、取得した定義をその起動中にメモリ内で使います。通信できないときも、利用可能な保存済み定義や内蔵定義で確認できます。独自に配布した `java-advisories.json` は、EXEと同じ場所に置いて利用できます。
-
 ## 🖥️ 対応と影響の範囲
 
 - Windows 10/11 x64、Windows用Java **11 / 17 / 21 / 25 LTS** のJDK/JREが対象です。
